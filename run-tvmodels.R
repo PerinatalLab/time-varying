@@ -5,21 +5,41 @@ setwd("/mnt/HARVEST")
 
 # --------------------
 # read in phenotypes
-mfr = read.table("harvest_mfr.csv", h=T, sep=";")
+mfr = read.table("PDB1724_MFR_541_v12.csv", h=T, sep=";")
 
 # clean a bit
-mfr = filter(mfr, is.na(IVF), is.na(DAAR) | DAAR!=FAAR, SVLEN_DG<295, FLERFODSEL==0, C00_MALF_ALL==0)
-# Malformations - might have a better variable later.
+mfr = filter(mfr, is.na(ART), is.na(DAAR) | DAAR!=FAAR,
+             SVLEN_DG<295, is.na(FLERFODSEL),
+             is.na(ZSCORE_BW_GA) | abs(ZSCORE_BW_GA)<10)
+# 0 or NA APGARs almost always indicate big problems and aren't genotyped
+mfr = filter(mfr, APGAR1>0, APGAR5>0)
+# TODO Malformations skipped - might have a better variable later.
 
 # create censoring:
 # Might considering using SVLEN_DG>=295 here instead.
 mfr = mutate(mfr, hadevent=!is.na(FSTART) & FSTART==1)
 mfr = mfr[,c("PREG_ID_1724", "SVLEN_DG", "hadevent")]
+nrow(mfr)  # 99765
+
+
+# -------------------
+# ID conversion
+link2 = read.table("parental_ID_to_PREG_ID.csv", h=T, sep=";")
+link2 = link2[,c("M_ID_1724", "PREG_ID_1724")]
+link2$M_ID_1724 = trimws(link2$M_ID_1724)
+
+# some n lost, probably not genotyped parents:
+mfr_mid = inner_join(mfr, link2, by="PREG_ID_1724")
+nrow(mfr_mid)
 
 # sentrix-pregid converter:
-link = read.table("harvest_linkage.csv", h=T, sep=";")
-link = link[,c("PREG_ID_1724", "SentrixID_1")]
+link = read.table("linkage_Mother_PDB1724.csv", h=T, sep=";")
+link = link[,c("M_ID_1724", "SENTRIX_ID")]
+mfr_mid = inner_join(mfr_mid, link, by="M_ID_1724")
 
+# Remove repeated pregnancies & genotyping duplicates:
+mfr_mid = mfr_mid[!duplicated(mfr_mid$M_ID_1724),]
+nrow(mfr_mid)  # 79194
 
 
 # --------------------
@@ -27,31 +47,50 @@ link = link[,c("PREG_ID_1724", "SentrixID_1")]
 gt = read.table("ebf1-moms-dosage.csv.gz", h=T, sep=" ")
 gtinfo = gt[,1:6]
 gt = t(gt[,7:ncol(gt)])
-gt = data.frame(PID=substring(rownames(gt), 2), GT=as.numeric(gt))
+gt = data.frame(gt)
+gt$SENTRIX_ID = substring(rownames(gt), 2)
+rownames(gt) = NULL
+gt = filter(gt, !is.na(X1)) # tends to add an empty line in the end
+
+
+# TODO temp
+gt$GT = gt$X1
+
+# NOTE: flipping alleles to effect=minor alignment,
+# because the last analysis is sensitive to that.
+if(mean(gt$GT)>1){
+  gt$GT = 2-gt$GT
+  print("NOTE: allele flipped")
+  # TODO might want to flip the gtinfo row accordingly
+}
+
+gt$GTcat = factor(round(gt$GT))
+
 
 # merge w/ pheno data
-gt = inner_join(link, gt, by=c("SentrixID_1"="PID"))
+merged = inner_join(gt, mfr_mid, by=c("SENTRIX_ID"))
+nrow(merged)  # 9500
 
-# NOTE: some genotypes will be duplicated (have multiple pregs).
-# currently deleting the duplicates
-gt = filter(gt, !duplicated(gt$SentrixID_1))
-nrow(gt)
-
-merged = inner_join(gt, mfr, by=c("PREG_ID_1724"))
-nrow(merged)
+# just some checks
+sum(duplicated(merged$SENTRIX_ID))
+sum(duplicated(merged$PREG_ID_1724))
 
 
-# TODO look here
+# remove irrelevant timeframe for stability
 merged$GAc = merged$SVLEN_DG-170
-merged$GTeff = 2-merged$GT  # recode to have 0 as the reference allele
-merged$GTcat = factor(round(merged$GTeff))
+# TODO might need to tweak this later based on genotyped data
+
+GTpalette =  c("#A6D96A", "#FD8D3C", "#D7191C")
 
 # make a plot & a table to check the distributions visually
 ggplot(merged[merged$hadevent,], aes(x=SVLEN_DG, group=GTcat)) +
-  geom_density(aes(col=GTcat, fill=GTcat), alpha=0.1)
+  geom_vline(xintercept=259, col="grey60") +
+  geom_density(aes(col=GTcat, fill=GTcat), alpha=0.05) +
+  scale_fill_manual(values=GTpalette) + scale_color_manual(values=GTpalette) +
+  theme_bw()
 merged %>%
   group_by(GTcat) %>%
-  summarize(n(), sum(SVLEN_DG<255), sum(SVLEN_DG<240), mean(SVLEN_DG<259))
+  summarize(n(), sum(SVLEN_DG<259), sum(SVLEN_DG<240), mean(SVLEN_DG<259))
 
 # ----------------
 # models
@@ -60,6 +99,7 @@ merged %>%
 summary(lm(SVLEN_DG ~ GT, data=merged[merged$hadevent,]))
 summary(lm(SVLEN_DG ~ GTcat, data=merged[merged$hadevent,]))
 summary(glm(SVLEN_DG<259 ~ GT, family="binomial", data=merged[merged$hadevent,]))
+summary(glm(SVLEN_DG<259 ~ GTcat, family="binomial", data=merged[merged$hadevent,]))
 
 library(survival)
 
@@ -68,13 +108,15 @@ mod.ph = coxph(Surv(SVLEN_DG, hadevent) ~ GT, data=merged)
 summary(mod.ph)
 
 km.ph = survfit(coxph(Surv(GAc, hadevent) ~ GTcat, data=merged), newdata=data.frame(GTcat=factor(0:2)))
-plot(km.ph, conf.int=F, col=2:4)
-legend(5, 0.4, levels(merged$GTcat), col=2:4, lty=1)
-plot(km.ph, conf.int=F, col=2:4, cumhaz=T, log=T)
-legend(5, 0.4, levels(merged$GTcat), col=2:4, lty=1)
+plot(km.ph, conf.int=F, col=4:2)
+legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
+plot(km.ph, conf.int=F, col=4:2, cumhaz=T, log=T)
+legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 
-# using identity b/c the default tr removes outliers (possibly the early births of interest)
-zp.ph = cox.zph(mod.ph, transform='identity')
+# Default transform supposedly downweighs outliers.
+# Could use the identity one, but that is identical to the interaction w/ t below.
+# zp.ph = cox.zph(mod.ph, transform='identity')
+zp.ph = cox.zph(mod.ph)
 zp.ph
 plot(zp.ph, resid=F)
 
@@ -83,10 +125,10 @@ plot(zp.ph, resid=F)
 
 # KM curve check
 km.tv = survfit(Surv(GAc, hadevent) ~ GTcat, data=merged)
-plot(km.tv, col=2:4)
-legend(5, 0.4, levels(merged$GTcat), col=2:4, lty=1)
-plot(km.tv, conf.int=F, col=2:4, cumhaz=T, log=T)
-legend(5, 0.4, levels(merged$GTcat), col=2:4, lty=1)
+plot(km.tv, col=4:2)
+legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
+plot(km.tv, conf.int=F, col=4:2, cumhaz=T, log=T)
+legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 
 # via specified forms in survival
 mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT), data=merged,
@@ -94,7 +136,7 @@ mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT), data=merged,
 summary(mod.tv.1)
 
 
-# hand-tuned form for the suspected location
+# contrast for PTD
 mod.tv.2 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT), data=merged,
                  tt=function(x, t, ...) x*(t<89))
 summary(mod.tv.2)
@@ -103,31 +145,27 @@ summary(mod.tv.2)
 # via pammtools
 library(mgcv)
 library(pammtools)
+# NOTE: using cubic regr splines for consistency betw. ti() and s()
 # convert to piecewise format - i.e. 1 row per each period per indiv.:
-ped = as_ped(merged, Surv(GAc, hadevent)~GT, id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)
-ped$GTcat = factor(round(ped$GT))
+ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat, id = "id", cut=c(0,seq(20, 130, by=7)))
+nrow(ped)  # 135052
 
 # fit a piecewise PH model for testing
-mod.pc = gam(ped_status ~ s(tend) + GT, data=ped, offset=offset, family=poisson())
+mod.pc = gam(ped_status ~ s(tend,bs='cr',k=11) + GT, data=ped, offset=offset, family=poisson())
 summary(mod.pc)
 plot(mod.pc, pages=1, all.terms=T, scale=0)
 
 
 # time-varying by prespecified shape
-mod.tv.pc.i = gam(ped_status ~ s(tend) + GT + GT:tend, data=ped, offset=offset, family=poisson())
+mod.tv.pc.i = gam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend, data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.i)
 plot(mod.tv.pc.i, pages=1, all.terms=T, scale=0)
-
-ped_times = int_info(ped)$tend
-ped_effs = coef(mod.tv.pc.i)["GT"] + coef(mod.tv.pc.i)["GT:tend"] * ped_times
-plot(x = ped_times, y = ped_effs, type = "s")
 
 
 # time-varying smoothly (interaction with spline)
 # explanation: ti(tend) is the baseline h(x), and ti(tend, by=GT)
 # is a h_1(x)*GT term with potentially different shape.
-mod.tv.pc.sm = gam(ped_status ~ ti(tend) + GT + ti(tend, by=GT),
+mod.tv.pc.sm = gam(ped_status ~ ti(tend,bs='cr',k=11) + GT + ti(tend, by=GT,bs='cr'),
                      data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm)
 plot(mod.tv.pc.sm, pages=1, all.terms=T, scale=0)
@@ -135,27 +173,35 @@ plot(mod.tv.pc.sm, pages=1, all.terms=T, scale=0)
 # that there are some diffs.
 
 
-# via rstpm2
-library(rstpm2)
-mod.ph.stpm = stpm2(Surv(GAc, hadevent)~GT, data=merged, df=21)
-summary(mod.ph.stpm)
+# NOTE: this one is sensitive to allele choice, so should try both ways
+# non-linear in time AND non-linear in GT
+mod.tv.pc.sm2 = gam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr'),
+                   data=ped, offset=offset, family=poisson())
+summary(mod.tv.pc.sm2)
+plot(mod.tv.pc.sm2, pages=1, all.terms=T, scale=0)
 
-mod.tv.stpm = stpm2(Surv(GAc, hadevent)~GT, data=merged, tvc=list(GT=11), df=21)
-summary(mod.tv.stpm)
-plot(mod.tv.stpm, newdata=data.frame(GT=0), line.col=2)
-plot(mod.tv.stpm, newdata=data.frame(GT=1), line.col=3, add=T, ci=F)
-plot(mod.tv.stpm, newdata=data.frame(GT=2), line.col=4, add=T, ci=F)
+ped$GTcatRev = factor(round(2-ped$GT))
+mod.tv.pc.sm2.r = gam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr'),
+                    data=ped, offset=offset, family=poisson())
+summary(mod.tv.pc.sm2.r)
+plot(mod.tv.pc.sm2.r, pages=1, all.terms=T, scale=0)
 
-# Somewhat questionable way of getting one p-value
-anova(mod.ph.stpm, mod.tv.stpm)
+AIC(mod.pc)
+AIC(mod.tv.pc.i); AIC(mod.tv.pc.sm)
+AIC(mod.tv.pc.sm2); AIC(mod.tv.pc.sm2.r)
 
-# The high dfs currently are selected based on test controls.
-# Ideally this should pick them w/ AIC or such.
+# ---------------
+# Useful for printing the summaries:
+# library(itsadug)
+# gamtabs(mod.tv.pc.sm2.r, type="HTML")
+# report_stats(mod.tv.pc.sm2.r)
 
-# TODO check one more SNP
-# p=0.14 for non-prop test in Cox, 0.143 for the linear int term,
-# 0.297 or 0.493 for timereg non-prop process (empirical) via two tests
-# 0.107 for linear int term in GAM, 0.15 & 0.48 for strata in GAM,
-# 0.247 for interaction spline non-linearity in GAM
-# around 0.5 at best for spline terms in stmp2, 0.108 for ANOVA vs stmp2 PH
+# ---------------
+# VIZ
+vis.gam(mod.tv.pc.i, theta=50)
+vis.gam(mod.tv.pc.sm, theta=50)
+vis.gam(mod.tv.pc.sm2, theta=50)
+vis.gam(mod.tv.pc.sm2.r, theta=50)
 
+# TODO gratia or other neater viz of the hazards?
+# TODO figure out what of this needs to be stored as the output
