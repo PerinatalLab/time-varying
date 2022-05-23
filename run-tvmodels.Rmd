@@ -3,6 +3,8 @@ title: "Time-variant effects"
 author: "Julius J."
 date: "`r Sys.Date()`"
 output: html_document
+params:
+  i: 1
 ---
 
 ```{r setup, include=FALSE}
@@ -12,10 +14,12 @@ library(ggplot2)
 library(survival)
 library(mgcv)
 library(pammtools)
+library(cowplot)
 knitr::opts_knit$set(root.dir='/mnt/HARVEST')
 knitr::opts_chunk$set(fig.width=7, fig.height=4) 
 ```
 
+# Report on SNP `r params$i`
 
 # Preparation
 
@@ -63,7 +67,7 @@ nrow(mfr_mid)  # 79194
 
 ```{r genodata, cache=T}
 # read in genotypes
-gt = read.table("ebf1-moms-dosage.csv.gz", h=T, sep=" ")
+gt = read.table("top1-moms-dosage.csv.gz", h=T, sep=" ")
 gtinfo = gt[,1:6]
 gt = t(gt[,7:ncol(gt)])
 gt = data.frame(gt)
@@ -95,7 +99,7 @@ GTpalette =  c("#A6D96A", "#FD8D3C", "#D7191C")
 
 ```{r definesnp, cache=T}
 # TODO temp
-merged$GT = merged$X1
+merged$GT = merged[,paste0("X",params$i)]
 
 # NOTE: flipping alleles to effect=minor alignment,
 # because the last analysis is sensitive to that.
@@ -106,6 +110,10 @@ if(mean(merged$GT)>1){
 }
 
 merged$GTcat = factor(round(merged$GT))
+
+# print some info
+table(merged$GT)
+gtinfo[params$i,]
 ```
 
 ## Some sanity checks
@@ -184,7 +192,7 @@ summary(mod.tv.2)
 
 ## Piecewise additive models for PH
 
-```{r pammph, cache=T}
+```{r pammph, cache=T, fig.height=3}
 # NOTE: using cubic regr splines for consistency betw. ti() and s()
 # convert to piecewise format - i.e. 1 row per each period per indiv.:
 ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat, id = "id", cut=c(0,seq(20, 130, by=7)))
@@ -202,7 +210,7 @@ coef(mod.ph)
 
 ## PAM w/ prespecified shape
 
-```{r pammtvshape, cache=T}
+```{r pammtvshape, cache=T, fig.height=3}
 # time-varying by prespecified shape
 mod.tv.pc.i = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend, data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.i)
@@ -211,7 +219,7 @@ plot(mod.tv.pc.i, pages=1, all.terms=T, scale=0)
 
 ## PAM w/ smooth interactions
 
-```{r pammsmooth, cache=T, fig.width=7, fig.height=8}
+```{r pammsmooth, cache=T, fig.width=7, fig.height=6}
 # time-varying smoothly (interaction with spline)
 # explanation: ti(tend) is the baseline h(x), and ti(tend, by=GT)
 # is a h_1(x)*GT term with potentially different shape.
@@ -254,6 +262,31 @@ vis.gam(mod.tv.pc.i, theta=40)
 vis.gam(mod.tv.pc.sm, theta=40)
 vis.gam(mod.tv.pc.sm2, theta=40)
 vis.gam(mod.tv.pc.sm2.r, theta=40)
+```
 
-# TODO gratia or other neater viz of the hazards?
+```{r pammplots2, cache=T, fig.height=3}
+# will plot 2SE intervals by default
+p1 = gg_slice(ped, mod.pc, "GT", tend=unique(tend), GT=0:2) + theme_bw() + 
+  theme(legend.position = "none")
+p2 = gg_slice(ped, mod.tv.pc.i, "GT", tend=unique(tend), GT=0:2) + theme_bw()
+plot_grid(p1, p2, rel_widths=c(0.45,0.55))
+
+p1 = gg_slice(ped, mod.tv.pc.sm, "GT", tend=unique(tend), GT=0:2) + theme_bw() +
+  theme(legend.position = "none")
+p2 = gg_slice(ped, mod.tv.pc.sm, "GT", tend=unique(tend), GT=0:2) + theme_bw() +
+  coord_cartesian(ylim=c(-2,2))
+plot_grid(p1, p2, rel_widths=c(0.45,0.55))
+
+p1 = gg_slice(ped, mod.tv.pc.sm2, "GTcat", tend=unique(tend), GTcat=factor(0:2)) +
+  theme_bw() + theme(legend.position = "none")
+p2 = gg_slice(ped, mod.tv.pc.sm2, "GTcat", tend=unique(tend), GTcat=factor(0:2)) +
+  theme_bw() + coord_cartesian(ylim=c(-2,2))
+plot_grid(p1, p2, rel_widths=c(0.45,0.55))
+
+p1 = gg_slice(ped, mod.tv.pc.sm2.r, "GTcatRev", tend=unique(tend), GTcatRev=factor(0:2)) +
+  theme_bw() + theme(legend.position = "none")
+p2 = gg_slice(ped, mod.tv.pc.sm2.r, "GTcatRev", tend=unique(tend), GTcatRev=factor(0:2)) +
+  theme_bw() + coord_cartesian(ylim=c(-2,2))
+plot_grid(p1, p2, rel_widths=c(0.45,0.55))
+
 ```

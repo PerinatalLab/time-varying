@@ -220,9 +220,6 @@ vis.gam(mod.tv.pc.sm2.r, theta=50)
 #                               smooth=c("ti(tend):as.ordered(GTcatRev)1",
 #                                        "ti(tend):as.ordered(GTcatRev)2"))
 
-# TODO double check that these intervals are correct.
-# At center value of tend they seem to match well the coefs+SEs reported for GT.
-
 # will plot 2SE intervals by default
 gg_slice(ped, mod.pc, "GT", tend=unique(tend), GT=0:2) + theme_bw()
 gg_slice(ped, mod.tv.pc.i, "GT", tend=unique(tend), GT=0:2) + theme_bw()
@@ -232,6 +229,16 @@ gg_slice(ped, mod.tv.pc.sm2, "GTcat", tend=unique(tend), GTcat=factor(0:2)) + th
   coord_cartesian(ylim=c(-2,2))
 gg_slice(ped, mod.tv.pc.sm2.r, "GTcatRev", tend=unique(tend), GTcatRev=factor(0:2)) + theme_bw()
 
+# works like this:
+# retrieves predict.gam(type="terms") values
+# ped %>%
+#   make_newdata(tend=unique(tend), GTcat=factor(0:2)) %>%
+#   add_term(mod.tv.pc.sm2, term = "GTcat")
+# tmpdata = expand.grid(tend=unique(ped$tend), GT=0:2)
+# cbind(tmpdata, predict(mod.pc, tmpdata, se.fit=T, type="iterms")) %>%
+#   ggplot(aes(x=tend,col=factor(GT),group=GT)) + geom_line(aes(y=fit.GT)) +
+#   geom_ribbon(aes(ymin=fit.GT-2*se.fit.GT, ymax=fit.GT+2*se.fit.GT), alpha=0.1) +
+#   theme_bw()
 
-# TODO gratia or other neater viz of the hazards?
+
 # TODO figure out what of this needs to be stored as the output
