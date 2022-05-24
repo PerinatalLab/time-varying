@@ -21,51 +21,16 @@ knitr::opts_chunk$set(fig.width=7, fig.height=4)
 
 # Report on SNP `r params$i`
 
-# Preparation
-
-## Phenotype data
-
-```{r phenodata, cache=T}
-# read in phenotypes
-mfr = read.table("PDB1724_MFR_541_v12.csv", h=T, sep=";")
-
-# clean a bit
-mfr = filter(mfr, is.na(ART), is.na(DAAR) | DAAR!=FAAR,
-             SVLEN_DG<295, is.na(FLERFODSEL),
-             is.na(ZSCORE_BW_GA) | abs(ZSCORE_BW_GA)<10)
-# 0 or NA APGARs almost always indicate big problems and aren't genotyped
-mfr = filter(mfr, APGAR1>0, APGAR5>0)
-# TODO Malformations skipped - might have a better variable later.
-
-# create censoring:
-# Might considering using SVLEN_DG>=295 here instead.
-mfr = mutate(mfr, hadevent=!is.na(FSTART) & FSTART==1)
-mfr = mfr[,c("PREG_ID_1724", "SVLEN_DG", "hadevent")]
-nrow(mfr)  # 99765
-
-# ID conversion
-link2 = read.table("parental_ID_to_PREG_ID.csv", h=T, sep=";")
-link2 = link2[,c("M_ID_1724", "PREG_ID_1724")]
-link2$M_ID_1724 = trimws(link2$M_ID_1724)
-
-# some n lost, probably not genotyped parents:
-mfr_mid = inner_join(mfr, link2, by="PREG_ID_1724")
-nrow(mfr_mid)  #  99707
-
-# sentrix-pregid converter:
-link = read.table("linkage_Mother_PDB1724.csv", h=T, sep=";")
-link = link[,c("M_ID_1724", "SENTRIX_ID")]
-mfr_mid = inner_join(mfr_mid, link, by="M_ID_1724")
-
-# Remove repeated pregnancies & genotyping duplicates:
-mfr_mid = mfr_mid[!duplicated(mfr_mid$M_ID_1724),]
-nrow(mfr_mid)  # 79194
-```
-
-
-## Genotype data
+## Data
 
 ```{r genodata, cache=T}
+# TODO update numbers for the new pheno file
+# TODO include batch covariate
+
+# read in filtered phenotypes
+mfr_mid = read.table("ga_cleaned.csv", h=T, sep=";")
+nrow(mfr_mid)  # 79194
+
 # read in genotypes
 gt = read.table("top1-moms-dosage.csv.gz", h=T, sep=" ")
 gtinfo = gt[,1:6]
