@@ -7,6 +7,7 @@ library(dplyr)
 mfrfile = snakemake@input[[1]] # "PDB1724_MFR_541_v12.csv"
 parentalidfile = snakemake@input[[2]] # "parental_ID_to_PREG_ID.csv"
 sentrixlinkfile = snakemake@input[[3]] # "linkage_Mother_PDB1724.csv"
+genoflagfile = snakemake@input[[4]] # "mobagen-flaglist-n99259.txt"
 
 # read in phenotypes
 mfr = read.table(mfrfile, h=T, sep=";")
@@ -41,7 +42,7 @@ mfr_mid = inner_join(mfr_mid, link, by="M_ID_1724")
 nrow(mfr_mid)  # 95388
 
 # genotyping QC flags for the 30k data:
-flags = read.table("mobagen-flaglist-n99259.txt", h=T)
+flags = read.table(genoflagfile, h=T)
 
 # keep only genotyped samples
 mfr_mid = inner_join(mfr_mid, flags, by=c("SENTRIX_ID"="IID"))
@@ -65,4 +66,4 @@ nrow(mfr_mid)  # 26908 (or 29763 before core flag)
 
 mfr_mid = mfr_mid[,c("PREG_ID_1724", "SVLEN_DG", "hadevent", "BATCH", "SENTRIX_ID")]
 
-write.csv(mfr_mid, snakemake@output[[1]], quote=F, sep=";", row.names=F)
+write.table(mfr_mid, snakemake@output[[1]], quote=F, sep=";", row.names=F)

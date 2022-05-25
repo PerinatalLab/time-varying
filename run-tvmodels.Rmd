@@ -2,9 +2,12 @@
 title: "Time-variant effects"
 author: "Julius J."
 date: "`r Sys.Date()`"
-output: html_document
 params:
+  mfrfile: "/mnt/HARVEST/ga_cleaned.csv"
+  gtfile: "/mnt/HARVEST/top1-moms-dosage.csv.gz"
+  mobaresfile: "/mnt/HARVEST/topsnps_moba_summaries.txt"
   i: 1
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -15,75 +18,99 @@ library(survival)
 library(mgcv)
 library(pammtools)
 library(cowplot)
-knitr::opts_knit$set(root.dir='/mnt/HARVEST')
-knitr::opts_chunk$set(fig.width=7, fig.height=4) 
+library(knitr)
+library(kableExtra)
+library(tidyr)
+library(broom)
+
+knitr::opts_chunk$set(fig.width=7, fig.height=4)
+snpnum = as.numeric(params$i)
+
+# unified palette for plotting
+GTpalette =  c("#A6D96A", "#FD8D3C", "#D7191C")
 ```
 
-# Report on SNP `r params$i`
+# Report on SNP `r snpnum`
 
 ## Data
 
-```{r genodata, cache=T}
-# TODO update numbers for the new pheno file
-# TODO include batch covariate
+```{r genodata}
+# TODO update numbers for the new geno file
 
 # read in filtered phenotypes
-mfr_mid = read.table("ga_cleaned.csv", h=T, sep=";")
-nrow(mfr_mid)  # 79194
+mfr_mid = read.table(params$mfrfile, h=T, sep=";")
+nrow(mfr_mid)  # 26908
 
 # read in genotypes
-gt = read.table("top1-moms-dosage.csv.gz", h=T, sep=" ")
+# gt = read.table(params$gtfile, h=T, sep=" ") # NOTE this might create different rownames
+gt = data.table::fread(params$gtfile, sep=" ", h=T)
 gtinfo = gt[,1:6]
 gt = t(gt[,7:ncol(gt)])
 gt = data.frame(gt)
-gt$SENTRIX_ID = substring(rownames(gt), 2)
+gt$SENTRIX_ID = rownames(gt)
 rownames(gt) = NULL
 gt = filter(gt, !is.na(X1)) # tends to add an empty line in the end
 
 # merge w/ pheno data
 merged = inner_join(gt, mfr_mid, by=c("SENTRIX_ID"))
-nrow(merged)  # 9500
+nrow(merged)  # all 26908 for autosomes
 
 # remove irrelevant timeframe for stability
-merged$GAc = merged$SVLEN_DG-170
+merged$GAc = merged$SVLEN_DG-169
 # TODO might need to tweak this later based on genotyped data
 
 # just some checks
 sum(duplicated(merged$SENTRIX_ID))  # 0 
 sum(duplicated(merged$PREG_ID_1724))  # 0
 range(merged$GAc)
-
-# unified palette for plotting
-GTpalette =  c("#A6D96A", "#FD8D3C", "#D7191C")
 ```
-
 
 # Analysis
 
-## Select and prepare the marker
+## Select the marker and assign alleles
 
-```{r definesnp, cache=T}
-# TODO temp
-merged$GT = merged[,paste0("X",params$i)]
+```{r definesnp, echo=F}
+# select the right marker
+merged$GT = merged[,paste0("X",snpnum)]
+gtinfo$REF.orig = gtinfo$REF
+gtinfo$ALT.orig = gtinfo$ALT
 
 # NOTE: flipping alleles to effect=minor alignment,
 # because the last analysis is sensitive to that.
 if(mean(merged$GT)>1){
   merged$GT = 2-merged$GT
   print("NOTE: allele flipped")
-  # TODO might want to flip the gtinfo row accordingly
+  # flip the gtinfo row accordingly
+  gtinfo[snpnum,"REF"]  = gtinfo[snpnum,"ALT.orig"]
+  gtinfo[snpnum,"ALT"]  = gtinfo[snpnum,"REF.orig"]
 }
 
 merged$GTcat = factor(round(merged$GT))
+# relevel to ensure the oldest and one of the largest batches is ref
+merged$BATCH = factor(merged$BATCH, levels=c("M12A","FEB18","JAN15","JUN15",
+                                             "M12B","M24","MAY16",
+                                             "ROT1","ROT2","TED"))
 
 # print some info
-table(merged$GT)
-gtinfo[params$i,]
+gttable = table(merged$GT, dnn=c("dosage"))
+kable(split(gttable, (1:length(gttable))%/%8))
+gtinfo[snpnum,] %>% 
+  separate(INFO, c(NA, "INFO", "RefPanelAF", "AN", "AC"), sep="[;A-Za-z]*=") %>%
+  kable
+
+# merge in some info from the MOBA results table
+metares = read.table(params$mobaresfile, h=T)
+metares$CHR = as.character(metares$CHR)
+gtinfo$CHROM = as.character(gtinfo$CHROM)
+
+select(gtinfo[snpnum,], -one_of(c("REF.orig", "ALT.orig", "INFO"))) %>%
+  left_join(metares, by=c("CHROM"="CHR", "POS")) %>%
+  kable
 ```
 
 ## Some sanity checks
 
-```{r checksnp, cache=T}
+```{r checksnp, echo=F}
 ggplot(merged[merged$hadevent,], aes(x=SVLEN_DG, group=GTcat)) +
   geom_vline(xintercept=259, col="grey60") +
   geom_density(aes(col=GTcat, fill=GTcat), alpha=0.05) +
@@ -91,28 +118,53 @@ ggplot(merged[merged$hadevent,], aes(x=SVLEN_DG, group=GTcat)) +
   theme_bw()
 merged %>%
   group_by(GTcat) %>%
-  summarize(n(), sum(SVLEN_DG<259), sum(SVLEN_DG<240), mean(SVLEN_DG<259))
+  summarize(n(), sum(SVLEN_DG<259), sum(SVLEN_DG<240), mean(SVLEN_DG<259)) %>%
+  kable
 ```
 
 ## Basic models
 
-```{r basicmodels, cache=T}
-# test to confirm effect size & direction
-summary(lm(SVLEN_DG ~ GT, data=merged[merged$hadevent,]))
-summary(lm(SVLEN_DG ~ GTcat, data=merged[merged$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ GT, family="binomial", data=merged[merged$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ GTcat, family="binomial", data=merged[merged$hadevent,]))
+### The most appropriate model:
+
+```{r basicmodels, echo=F}
+# to confirm effect size & direction
+summary(lm(SVLEN_DG ~ GT + BATCH, data=merged[merged$hadevent,]))
+```
+
+### Overview of slightly different models
+
+```{r basicmodels2, echo=F}
+sum1 = bind_rows(
+  "lm"=tidy(lm(SVLEN_DG ~ GT, data=merged[merged$hadevent,])),
+  "lm.cat"=tidy(lm(SVLEN_DG ~ GTcat, data=merged[merged$hadevent,])),
+  "b"=tidy(glm(SVLEN_DG<259 ~ GT, family="binomial", data=merged[merged$hadevent,])),
+  "b.cat"=tidy(glm(SVLEN_DG<259 ~ GTcat, family="binomial", data=merged[merged$hadevent,])),
+  .id="model")
+sum1$batch=" "
+sum2 = bind_rows(
+  "lm"=tidy(lm(SVLEN_DG ~ GT + BATCH, data=merged[merged$hadevent,])),
+  "lm.cat"=tidy(lm(SVLEN_DG ~ GTcat + BATCH, data=merged[merged$hadevent,])),
+  "b"=tidy(glm(SVLEN_DG<259 ~ GT + BATCH, family="binomial", data=merged[merged$hadevent,])),
+  "b.cat"=tidy(glm(SVLEN_DG<259 ~ GTcat + BATCH, family="binomial", data=merged[merged$hadevent,])),
+  .id="model")
+sum2$batch="+batch"
+bind_rows(sum1, sum2)[,c("model", "batch", "term", "estimate", "std.error", "p.value")] %>%
+  filter(term!="(Intercept)") %>%
+  mutate(sig=ifelse(p.value<0.05, "*", "")) %>%
+  kable
 ```
 
 ## Cox PH model
 
-```{r cox, cache=T}
+```{r cox, echo=F}
 par(mfrow=c(1, 2))
-mod.ph = coxph(Surv(SVLEN_DG, hadevent) ~ GT, data=merged)
+summary(coxph(Surv(SVLEN_DG, hadevent) ~ GT, data=merged))
+mod.ph = coxph(Surv(SVLEN_DG, hadevent) ~ GT + BATCH, data=merged)
 summary(mod.ph)
 
-km.ph = survfit(coxph(Surv(GAc, hadevent) ~ GTcat, data=merged), newdata=data.frame(GTcat=factor(0:2)))
+km.ph = survfit(coxph(Surv(GAc, hadevent) ~ GTcat + BATCH, data=merged), newdata=data.frame(GTcat=factor(0:2), BATCH="M12A"))
 plot(km.ph, conf.int=F, col=4:2, ylab="S(t)")
+title(main="K-M curve for coxph(~GTcat + BATCH)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 plot(km.ph, conf.int=F, col=4:2, cumhaz=T, log=T, ylab="Lambda(t)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
@@ -120,18 +172,21 @@ legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 
 ## TV by stratified K-M
 
-```{r tv2, cache=T}
+```{r tv2, echo=F}
+# NOTE: we're ignoring batch here, but might need to change it if batch
+# actually has an effect.
 par(mfrow=c(1, 2))
 km.tv = survfit(Surv(GAc, hadevent) ~ GTcat, data=merged)
 plot(km.tv, col=4:2, ylab="S(t)")
+title(main="K-M curve, strata by GT, no BATCH")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 plot(km.tv, conf.int=F, col=4:2, cumhaz=T, log=T, ylab="Lambda(t)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 ```
 
-## TV by Schoenfeld residuals
+## TV by testing Schoenfeld residuals
 
-```{r tvtests, cache=T}
+```{r tvtests}
 # Default transform supposedly downweighs outliers.
 # Could use the identity one, but that is identical to the interaction w/ t below.
 # zp.ph = cox.zph(mod.ph, transform='identity')
@@ -142,14 +197,14 @@ plot(zp.ph, resid=F)
 
 ## TV by Cox w/ prespecified shapes
 
-```{r coxint, cache=T}
+```{r coxint}
 # via specified forms in survival
-mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT), data=merged,
+mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH, data=merged,
                  tt=function(x, t, ...) x*(t/100))
 summary(mod.tv.1)
 
 # contrast for PTD
-mod.tv.2 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT), data=merged,
+mod.tv.2 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH, data=merged,
                  tt=function(x, t, ...) x*(t<89))
 summary(mod.tv.2)
 ```
@@ -157,16 +212,17 @@ summary(mod.tv.2)
 
 ## Piecewise additive models for PH
 
-```{r pammph, cache=T, fig.height=3}
+```{r pammph, fig.height=3}
 # NOTE: using cubic regr splines for consistency betw. ti() and s()
 # convert to piecewise format - i.e. 1 row per each period per indiv.:
-ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat, id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 135052
+ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat + BATCH, id = "id", cut=c(0,seq(20, 130, by=7)))
+ped$BATCH = factor(ped$BATCH)
+nrow(ped)  # 385316
 
 # fit a piecewise PH model for testing
-mod.pc = bam(ped_status ~ s(tend,bs='cr',k=11) + GT, data=ped, offset=offset, family=poisson())
+mod.pc = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + BATCH, data=ped, offset=offset, family=poisson())
 summary(mod.pc)
-plot(mod.pc, pages=1, all.terms=T, scale=0)
+plot(mod.pc, pages=2, all.terms=T, scale=0)
 
 # confirm that doesn't differ much from Cox
 coef(mod.pc)
@@ -175,45 +231,45 @@ coef(mod.ph)
 
 ## PAM w/ prespecified shape
 
-```{r pammtvshape, cache=T, fig.height=3}
+```{r pammtvshape, fig.height=3}
 # time-varying by prespecified shape
-mod.tv.pc.i = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend, data=ped, offset=offset, family=poisson())
+mod.tv.pc.i = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend + BATCH, data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.i)
-plot(mod.tv.pc.i, pages=1, all.terms=T, scale=0)
+plot(mod.tv.pc.i, pages=2, all.terms=T, scale=0)
 ```
 
 ## PAM w/ smooth interactions
 
-```{r pammsmooth, cache=T, fig.width=7, fig.height=6}
+```{r pammsmooth, fig.width=7, fig.height=6}
 # time-varying smoothly (interaction with spline)
 # explanation: ti(tend) is the baseline h(x), and ti(tend, by=GT)
 # is a h_1(x)*GT term with potentially different shape.
-mod.tv.pc.sm = bam(ped_status ~ ti(tend,bs='cr',k=11) + GT + ti(tend, by=GT,bs='cr'),
+mod.tv.pc.sm = bam(ped_status ~ ti(tend,bs='cr',k=11) + GT + ti(tend, by=GT,bs='cr') + BATCH,
                      data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm)
-plot(mod.tv.pc.sm, pages=1, all.terms=T, scale=0)
+plot(mod.tv.pc.sm, pages=2, all.terms=T, scale=0)
 # TODO: might need to change GAM to BAM for bigger data, but be aware
 # that there are some diffs.
 
 # NOTE: this one is sensitive to allele choice, so should try both ways
 # non-linear in time AND non-linear in GT
-mod.tv.pc.sm2 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr'),
+mod.tv.pc.sm2 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') + BATCH,
                    data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm2)
-plot(mod.tv.pc.sm2, pages=1, all.terms=T, scale=0)
+plot(mod.tv.pc.sm2, pages=2, all.terms=T, scale=0)
 
 ped$GTcatRev = factor(round(2-ped$GT))
-mod.tv.pc.sm2.r = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr'),
+mod.tv.pc.sm2.r = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr') + BATCH,
                     data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm2.r)
-plot(mod.tv.pc.sm2.r, pages=1, all.terms=T, scale=0)
+plot(mod.tv.pc.sm2.r, pages=2, all.terms=T, scale=0)
 
 AIC(mod.pc)
 AIC(mod.tv.pc.i); AIC(mod.tv.pc.sm)
 AIC(mod.tv.pc.sm2); AIC(mod.tv.pc.sm2.r)
 ```
 
-```{r pammplots, cache=T}
+```{r pammplots}
 # ---------------
 # Useful for printing the summaries:
 # library(itsadug)
@@ -222,14 +278,16 @@ AIC(mod.tv.pc.sm2); AIC(mod.tv.pc.sm2.r)
 
 # ---------------
 # VIZ
+# (this will nicely default to the most common level for batch)
 par(mfrow=c(1,2))
-vis.gam(mod.tv.pc.i, theta=40)
-vis.gam(mod.tv.pc.sm, theta=40)
-vis.gam(mod.tv.pc.sm2, theta=40)
-vis.gam(mod.tv.pc.sm2.r, theta=40)
+vis.gam(mod.tv.pc.i, view=c("GT", "tend"), theta=40)
+vis.gam(mod.tv.pc.sm, view=c("GT", "tend"), theta=40)
+vis.gam(mod.tv.pc.sm2, view=c("GTcat", "tend"), theta=40)
+vis.gam(mod.tv.pc.sm2.r, view=c("GTcatRev", "tend"), theta=40)
 ```
 
-```{r pammplots2, cache=T, fig.height=3}
+```{r pammplots2, fig.height=3}
+# (this should also default to the most common level for batch)
 # will plot 2SE intervals by default
 p1 = gg_slice(ped, mod.pc, "GT", tend=unique(tend), GT=0:2) + theme_bw() + 
   theme(legend.position = "none")
@@ -254,4 +312,5 @@ p2 = gg_slice(ped, mod.tv.pc.sm2.r, "GTcatRev", tend=unique(tend), GTcatRev=fact
   theme_bw() + coord_cartesian(ylim=c(-2,2))
 plot_grid(p1, p2, rel_widths=c(0.45,0.55))
 
+# TODO fix the timescale on these
 ```
