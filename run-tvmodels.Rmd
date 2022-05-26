@@ -269,6 +269,61 @@ AIC(mod.tv.pc.i); AIC(mod.tv.pc.sm)
 AIC(mod.tv.pc.sm2); AIC(mod.tv.pc.sm2.r)
 ```
 
+## Sensitivity check for batch adjustment
+
+```{r pammbatchtest}
+# sensitivity analysis, just to verify that batch adjustment is sufficient:
+# limiting batches to 4 large ones that have no differences in offset or such
+summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr'),
+            data=filter(ped, BATCH %in% c("M12A", "M24", "ROT1", "ROT2")),
+            offset=offset, family=poisson()))
+summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr'),
+            data=filter(ped, BATCH %in% c("M12A", "M24", "ROT1", "ROT2")),
+            offset=offset, family=poisson()))
+```
+## Sensitivity check for covariate adjustment
+```{r pammcovars, eval=F}
+# NOT RUN
+FULL_MFR = ...
+mer2 = inner_join(merged, FULL_MFR, by="PREG_ID_1724")
+ped = as_ped(mer2, Surv(GAc, hadevent)~GT + GTcat + BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
+             id = "id", cut=c(0,seq(20, 130, by=7)))
+ped$BATCH = factor(ped$BATCH)
+
+# piecewise first
+summary(bam(ped_status ~ s(tend,bs='cr',k=11) + GT + BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
+            data=ped, offset=offset, family=poisson()))
+coef(mod.ph)  # no change on the GT coef
+
+# best model but w/ covariates
+summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
+              BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
+            data=ped, offset=offset, family=poisson()))
+summary(mod.tv.pc.sm2)  # no change on the GT coef or the smooth degrees
+
+# adding smooths on covariates
+ped$par_relev = factor(ped$PARITET_5==0)
+mod.s1 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
+              BATCH + MOR_FAAR + FAAR + KJONN + par_relev +
+              ti(tend, by=KJONN,bs='cr') + ti(tend, by=par_relev,bs='cr'),
+             data=ped, offset=offset, family=poisson())
+summary(mod.s1)  # no change on the GT coef or the smooth degrees
+gg_slice(ped, mod.s1, "KJONN", tend=unique(tend), KJONN=1:2, BATCH=factor("M12A"),
+         par_relev=factor(F), FAAR=c(2004), MOR_FAAR=c(1975)) + theme_bw() +
+  theme(legend.position = "none")
+gg_slice(ped, mod.s1, "par_relev", tend=unique(tend), par_relev=factor(c(F,T))) + theme_bw() +
+  theme(legend.position = "none")  # notably, these factors have quite some nonlinearities too
+
+mod.s1 = bam(ped_status ~ ti(tend,bs='cr',k=11) + par_relev + ti(tend, by=as.ordered(par_relev),bs='cr') +
+              GTcat + BATCH + KJONN + MOR_FAAR + FAAR + ti(tend, by=as.ordered(GTcat),bs='cr'),
+             data=ped, offset=offset, family=poisson())
+summary(mod.s1)  # no change on the GT coef or the smooth degrees
+gg_slice(ped, mod.s1, "par_relev", tend=unique(tend), par_relev=factor(c(T,F))) + theme_bw() +
+  theme(legend.position = "none") + ylab("partial effect of parity==0 on hazard") +
+  xlab("GA interval tend-169")
+```
+
+
 ```{r pammplots}
 # ---------------
 # Useful for printing the summaries:
@@ -312,5 +367,4 @@ p2 = gg_slice(ped, mod.tv.pc.sm2.r, "GTcatRev", tend=unique(tend), GTcatRev=fact
   theme_bw() + coord_cartesian(ylim=c(-2,2))
 plot_grid(p1, p2, rel_widths=c(0.45,0.55))
 
-# TODO fix the timescale on these
 ```

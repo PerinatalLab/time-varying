@@ -8,7 +8,9 @@
 rule all:
 	"Create all target files."
 	input:
-		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,25))
+		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,23)),
+		expand("/home/julius/Documents/results/tv/report_tvmodelsX{i}.pdf", i=range(1,3)),
+		"/home/julius/Documents/results/tv/null-pvals.RData"
 
 rule prep_pheno:
 	"Clean MFR, create a censoring indicator, export selected columns."
@@ -40,13 +42,21 @@ rule analyze_tvX:
 	"Run the actual analyses of top SNPs in TV models (X chr. SNPs only)."
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
-		gt="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
+		gt="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",  # note: this uses different sample size
 		moba="/mnt/HARVEST/topsnps_moba_summaries.txt"
 	params:
-		outstem="/home/julius/Documents/results/tv/report_tvmodels"
+		outstem="/home/julius/Documents/results/tv/report_tvmodelsX"
 	output:
-		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(23,25))
+		expand("/home/julius/Documents/results/tv/report_tvmodelsX{i}.pdf", i=range(1,3))
 	shell:  # This is daft but very important to enforce serial Rmd knitting!!!
-		""" Rscript -e "for(i in 23:24){{ rmarkdown::render('run-tvmodels.Rmd', params=list(mfrfile='{input.mfr}', gtfile='{input.gt}', mobaresfile='{input.moba}', i=i), output_format='pdf_document', output_file=paste0('{params.outstem}', i, '.pdf')) }}"
+		""" Rscript -e "for(i in 1:2){{ rmarkdown::render('run-tvmodels.Rmd', params=list(mfrfile='{input.mfr}', gtfile='{input.gt}', mobaresfile='{input.moba}', i=i), output_format='pdf_document', output_file=paste0('{params.outstem}', i, '.pdf')) }}"
 		"""
 
+rule simulate_null:
+	"Check if the pam tests maintain alpha by bootstrapping."
+	input:
+		mfr="/mnt/HARVEST/ga_cleaned.csv"
+	output:
+		"/home/julius/Documents/results/tv/null-pvals.RData"
+	script:
+		"simulate-null.R"
