@@ -18,7 +18,8 @@ rule prep_pheno:
 		"/mnt/HARVEST/PDB1724_MFR_541_v12.csv",
 		"/mnt/HARVEST/parental_ID_to_PREG_ID.csv",
 		"/mnt/HARVEST/linkage_Mother_PDB1724.csv",
-		"/mnt/HARVEST/mobagen-flaglist-n99259.txt"
+		"/mnt/HARVEST/mobagen-flaglist-n99259.txt",
+		"/mnt/HARVEST/PDB1724_Q1_v12.csv"
 	output:
 		"/mnt/HARVEST/ga_cleaned.csv"
 	script:
@@ -60,3 +61,16 @@ rule simulate_null:
 		"/home/julius/Documents/results/tv/null-pvals.RData"
 	script:
 		"simulate-null.R"
+
+# THIS IS RUN ON HARVEST ONLY
+# rule extract_gt:
+# 	"Extract the selected SNPs from complete genotyping data."
+# 	input:
+# 		inauto="../snplist-alltop.txt",
+# 		inx="../snplist-alltop.txt",
+# 		GENO_DATA_FILE
+# 	output:
+# 		"/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+# 		"/mnt/HARVEST/top1x-moba30k-dosage.csv.gz"
+# 	shell:
+# 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x"
