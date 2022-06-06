@@ -4,7 +4,7 @@ author: "Julius J."
 date: "`r Sys.Date()`"
 params:
   mfrfile: "/mnt/HARVEST/ga_cleaned.csv"
-  gtfile: "/mnt/HARVEST/top1-moms-dosage.csv.gz"
+  gtfile: "/mnt/HARVEST/top1-moba30k-dosage.csv.gz"
   mobaresfile: "/mnt/HARVEST/topsnps_moba_summaries.txt"
   i: 1
 output: html_document
@@ -35,14 +35,11 @@ GTpalette =  c("#A6D96A", "#FD8D3C", "#D7191C")
 ## Data
 
 ```{r genodata}
-# TODO update numbers for the new geno file
-
 # read in filtered phenotypes
 mfr_mid = read.table(params$mfrfile, h=T, sep=";")
-nrow(mfr_mid)  # 26908
+nrow(mfr_mid)  # 25648
 
 # read in genotypes
-# gt = read.table(params$gtfile, h=T, sep=" ") # NOTE this might create different rownames
 gt = data.table::fread(params$gtfile, sep=" ", h=T)
 gtinfo = gt[,1:6]
 gt = t(gt[,7:ncol(gt)])
@@ -53,16 +50,25 @@ gt = filter(gt, !is.na(X1)) # tends to add an empty line in the end
 
 # merge w/ pheno data
 merged = inner_join(gt, mfr_mid, by=c("SENTRIX_ID"))
-nrow(merged)  # all 26908 for autosomes
+nrow(merged)  # all 25648 for autosomes
 
 # remove irrelevant timeframe for stability
 merged$GAc = merged$SVLEN_DG-169
-# TODO might need to tweak this later based on genotyped data
 
 # just some checks
 sum(duplicated(merged$SENTRIX_ID))  # 0 
 sum(duplicated(merged$PREG_ID_1724))  # 0
-range(merged$GAc)
+range(merged$GAc)  # 1 125
+
+# Prepare covariates:
+merged$PARITET_5[merged$PARITET_5==4] = 3  # parity honestly doesn't need 5 levels
+merged$PARITET_5 = factor(merged$PARITET_5, levels=c(1,0,2,3))
+# NOTE: using height will remove extra 1k missing values, so imputing:
+merged$AA87[is.na(merged$AA87)] = mean(merged$AA87, na.rm=T)
+# relevel to ensure the oldest and one of the largest batches is ref
+merged$BATCH = factor(merged$BATCH, levels=c("M12A","FEB18","JAN15","JUN15",
+                                             "M12B","M24","MAY16",
+                                             "ROT1","ROT2"))
 ```
 
 # Analysis
@@ -86,10 +92,6 @@ if(mean(merged$GT)>1){
 }
 
 merged$GTcat = factor(round(merged$GT))
-# relevel to ensure the oldest and one of the largest batches is ref
-merged$BATCH = factor(merged$BATCH, levels=c("M12A","FEB18","JAN15","JUN15",
-                                             "M12B","M24","MAY16",
-                                             "ROT1","ROT2","TED"))
 
 # print some info
 gttable = table(merged$GT, dnn=c("dosage"))
@@ -103,7 +105,7 @@ metares = read.table(params$mobaresfile, h=T)
 metares$CHR = as.character(metares$CHR)
 gtinfo$CHROM = as.character(gtinfo$CHROM)
 
-select(gtinfo[snpnum,], -one_of(c("REF.orig", "ALT.orig", "INFO"))) %>%
+select(gtinfo[snpnum,], -one_of(c("REF.orig", "ALT.orig", "INFO", "ALT"))) %>%
   left_join(metares, by=c("CHROM"="CHR", "POS")) %>%
   kable
 ```
@@ -128,10 +130,11 @@ merged %>%
 
 ```{r basicmodels, echo=F}
 # to confirm effect size & direction
-summary(lm(SVLEN_DG ~ GT + BATCH, data=merged[merged$hadevent,]))
+summary(lm(SVLEN_DG ~ GT + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
+           data=merged[merged$hadevent,]))
 ```
 
-### Overview of slightly different models
+### Overview of slightly different models, w/o covariates
 
 ```{r basicmodels2, echo=F}
 sum1 = bind_rows(
@@ -157,14 +160,18 @@ bind_rows(sum1, sum2)[,c("model", "batch", "term", "estimate", "std.error", "p.v
 ## Cox PH model
 
 ```{r cox, echo=F}
-par(mfrow=c(1, 2))
-summary(coxph(Surv(SVLEN_DG, hadevent) ~ GT, data=merged))
-mod.ph = coxph(Surv(SVLEN_DG, hadevent) ~ GT + BATCH, data=merged)
+summary(coxph(Surv(GAc, hadevent) ~ GT, data=merged))
+mod.ph = coxph(Surv(GAc, hadevent) ~ GT + BATCH + poly(MAGE,2) + FAAR +
+                 AA87 + KJONN + MISD + PARITET_5, data=merged)
 summary(mod.ph)
 
-km.ph = survfit(coxph(Surv(GAc, hadevent) ~ GTcat + BATCH, data=merged), newdata=data.frame(GTcat=factor(0:2), BATCH="M12A"))
+par(mfrow=c(1, 2))
+km.ph = survfit(coxph(Surv(GAc, hadevent) ~ GTcat + BATCH + poly(MAGE,2) +
+                        FAAR + AA87 + KJONN + MISD + PARITET_5, data=merged),
+                newdata=data.frame(GTcat=factor(0:2), BATCH="M12A", MAGE=21, FAAR=2005,
+                                   AA87=170, KJONN=1, MISD=F, PARITET_5=factor(1)))
 plot(km.ph, conf.int=F, col=4:2, ylab="S(t)")
-title(main="K-M curve for coxph(~GTcat + BATCH)")
+title(main="K-M curve for coxph(~GTcat + covs)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 plot(km.ph, conf.int=F, col=4:2, cumhaz=T, log=T, ylab="Lambda(t)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
@@ -173,12 +180,12 @@ legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 ## TV by stratified K-M
 
 ```{r tv2, echo=F}
-# NOTE: we're ignoring batch here, but might need to change it if batch
-# actually has an effect.
+# note that we're ignoring covariates here.
+# If this is to be present for visuals, need to find a way to incorporate them
 par(mfrow=c(1, 2))
 km.tv = survfit(Surv(GAc, hadevent) ~ GTcat, data=merged)
 plot(km.tv, col=4:2, ylab="S(t)")
-title(main="K-M curve, strata by GT, no BATCH")
+title(main="K-M curve, strata by GT, no covs")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
 plot(km.tv, conf.int=F, col=4:2, cumhaz=T, log=T, ylab="Lambda(t)")
 legend(5, 0.4, levels(merged$GTcat), col=4:2, lty=1)
@@ -199,12 +206,14 @@ plot(zp.ph, resid=F)
 
 ```{r coxint}
 # via specified forms in survival
-mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH, data=merged,
+mod.tv.1 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH + poly(MAGE,2) +
+                   FAAR + AA87 + KJONN + MISD + PARITET_5, data=merged,
                  tt=function(x, t, ...) x*(t/100))
 summary(mod.tv.1)
 
 # contrast for PTD
-mod.tv.2 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH, data=merged,
+mod.tv.2 = coxph(Surv(GAc, hadevent) ~ GT + tt(GT) + BATCH + poly(MAGE,2) +
+                   FAAR + AA87 + KJONN + MISD + PARITET_5, data=merged,
                  tt=function(x, t, ...) x*(t<89))
 summary(mod.tv.2)
 ```
@@ -215,27 +224,36 @@ summary(mod.tv.2)
 ```{r pammph, fig.height=3}
 # NOTE: using cubic regr splines for consistency betw. ti() and s()
 # convert to piecewise format - i.e. 1 row per each period per indiv.:
-ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat + BATCH, id = "id", cut=c(0,seq(20, 130, by=7)))
-ped$BATCH = factor(ped$BATCH)
-nrow(ped)  # 385316
+ped = as_ped(merged, Surv(GAc, hadevent)~GT + GTcat + BATCH +
+               MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
+             id = "id", cut=c(0,seq(20, 130, by=7)))
+nrow(ped)  # 367824
+ped$MISD = factor(ped$MISD) # to prevent gg_slice complaining
+ped$KJONN = factor(ped$KJONN)
+ped$FAAR = ped$FAAR-2000  # center, for neater plot scales
 
 # fit a piecewise PH model for testing
-mod.pc = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + BATCH, data=ped, offset=offset, family=poisson())
+
+mod.pc = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + BATCH +
+               poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
+             data=ped, offset=offset, family=poisson())
 summary(mod.pc)
 plot(mod.pc, pages=2, all.terms=T, scale=0)
 
 # confirm that doesn't differ much from Cox
-coef(mod.pc)
-coef(mod.ph)
+cbind(coef(mod.pc)[-1], c(coef(mod.ph), rep(NA, 10)))
+
 ```
 
 ## PAM w/ prespecified shape
 
 ```{r pammtvshape, fig.height=3}
 # time-varying by prespecified shape
-mod.tv.pc.i = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend + BATCH, data=ped, offset=offset, family=poisson())
+mod.tv.pc.i = bam(ped_status ~ s(tend,bs='cr',k=11) + GT + GT:tend + BATCH +
+               poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
+               data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.i)
-plot(mod.tv.pc.i, pages=2, all.terms=T, scale=0)
+plot(mod.tv.pc.i, pages=5, all.terms=T, scale=0)
 ```
 
 ## PAM w/ smooth interactions
@@ -244,25 +262,27 @@ plot(mod.tv.pc.i, pages=2, all.terms=T, scale=0)
 # time-varying smoothly (interaction with spline)
 # explanation: ti(tend) is the baseline h(x), and ti(tend, by=GT)
 # is a h_1(x)*GT term with potentially different shape.
-mod.tv.pc.sm = bam(ped_status ~ ti(tend,bs='cr',k=11) + GT + ti(tend, by=GT,bs='cr') + BATCH,
+mod.tv.pc.sm = bam(ped_status ~ ti(tend,bs='cr',k=11) + GT + ti(tend, by=GT,bs='cr') +
+                     BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
                      data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm)
-plot(mod.tv.pc.sm, pages=2, all.terms=T, scale=0)
-# TODO: might need to change GAM to BAM for bigger data, but be aware
-# that there are some diffs.
+plot(mod.tv.pc.sm, pages=3, all.terms=T, scale=0)
+# NOTE: bam is used for speed, but be aware that it differs from gam sometimes.
 
 # NOTE: this one is sensitive to allele choice, so should try both ways
 # non-linear in time AND non-linear in GT
-mod.tv.pc.sm2 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') + BATCH,
-                   data=ped, offset=offset, family=poisson())
+mod.tv.pc.sm2 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
+                      BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
+                      data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm2)
-plot(mod.tv.pc.sm2, pages=2, all.terms=T, scale=0)
+plot(mod.tv.pc.sm2, pages=3, all.terms=T, scale=0)
 
 ped$GTcatRev = factor(round(2-ped$GT))
-mod.tv.pc.sm2.r = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr') + BATCH,
-                    data=ped, offset=offset, family=poisson())
+mod.tv.pc.sm2.r = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr') +
+                        BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
+                        data=ped, offset=offset, family=poisson())
 summary(mod.tv.pc.sm2.r)
-plot(mod.tv.pc.sm2.r, pages=2, all.terms=T, scale=0)
+plot(mod.tv.pc.sm2.r, pages=3, all.terms=T, scale=0)
 
 AIC(mod.pc)
 AIC(mod.tv.pc.i); AIC(mod.tv.pc.sm)
@@ -274,53 +294,27 @@ AIC(mod.tv.pc.sm2); AIC(mod.tv.pc.sm2.r)
 ```{r pammbatchtest}
 # sensitivity analysis, just to verify that batch adjustment is sufficient:
 # limiting batches to 4 large ones that have no differences in offset or such
-summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr'),
-            data=filter(ped, BATCH %in% c("M12A", "M24", "ROT1", "ROT2")),
-            offset=offset, family=poisson()))
-summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcatRev + ti(tend, by=as.ordered(GTcatRev),bs='cr'),
+summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
+               poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
             data=filter(ped, BATCH %in% c("M12A", "M24", "ROT1", "ROT2")),
             offset=offset, family=poisson()))
 ```
 ## Sensitivity check for covariate adjustment
-```{r pammcovars, eval=F}
-# NOT RUN
-FULL_MFR = ...
-mer2 = inner_join(merged, FULL_MFR, by="PREG_ID_1724")
-ped = as_ped(mer2, Surv(GAc, hadevent)~GT + GTcat + BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-ped$BATCH = factor(ped$BATCH)
-
-# piecewise first
-summary(bam(ped_status ~ s(tend,bs='cr',k=11) + GT + BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
-            data=ped, offset=offset, family=poisson()))
-coef(mod.ph)  # no change on the GT coef
-
-# best model but w/ covariates
+```{r pammcovars, fig.height=3}
+# best model but w/o covariates
 summary(bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
-              BATCH + MOR_FAAR + FAAR + KJONN + PARITET_5,
-            data=ped, offset=offset, family=poisson()))
+              BATCH, data=ped, offset=offset, family=poisson()))
 summary(mod.tv.pc.sm2)  # no change on the GT coef or the smooth degrees
 
-# adding smooths on covariates
-ped$par_relev = factor(ped$PARITET_5==0)
+# adding smooths on some covariates
 mod.s1 = bam(ped_status ~ ti(tend,bs='cr',k=11) + GTcat + ti(tend, by=as.ordered(GTcat),bs='cr') +
-              BATCH + MOR_FAAR + FAAR + KJONN + par_relev +
-              ti(tend, by=KJONN,bs='cr') + ti(tend, by=par_relev,bs='cr'),
-             data=ped, offset=offset, family=poisson())
+               BATCH + poly(MAGE,2) + FAAR + AA87 + MISD + PARITET_5 + 
+               KJONN +  ti(tend, by=as.ordered(KJONN),bs='cr'),
+               data=ped, offset=offset, family=poisson())
 summary(mod.s1)  # no change on the GT coef or the smooth degrees
-gg_slice(ped, mod.s1, "KJONN", tend=unique(tend), KJONN=1:2, BATCH=factor("M12A"),
-         par_relev=factor(F), FAAR=c(2004), MOR_FAAR=c(1975)) + theme_bw() +
-  theme(legend.position = "none")
-gg_slice(ped, mod.s1, "par_relev", tend=unique(tend), par_relev=factor(c(F,T))) + theme_bw() +
-  theme(legend.position = "none")  # notably, these factors have quite some nonlinearities too
 
-mod.s1 = bam(ped_status ~ ti(tend,bs='cr',k=11) + par_relev + ti(tend, by=as.ordered(par_relev),bs='cr') +
-              GTcat + BATCH + KJONN + MOR_FAAR + FAAR + ti(tend, by=as.ordered(GTcat),bs='cr'),
-             data=ped, offset=offset, family=poisson())
-summary(mod.s1)  # no change on the GT coef or the smooth degrees
-gg_slice(ped, mod.s1, "par_relev", tend=unique(tend), par_relev=factor(c(T,F))) + theme_bw() +
-  theme(legend.position = "none") + ylab("partial effect of parity==0 on hazard") +
-  xlab("GA interval tend-169")
+gg_slice(ped, mod.s1, "KJONN", tend=unique(tend), KJONN=factor(1:2)) + theme_bw()
+# notably, these factors have quite some nonlinearities too
 ```
 
 

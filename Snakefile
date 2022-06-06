@@ -8,6 +8,12 @@
 rule all:
 	"Create all target files."
 	input:
+		"/home/julius/Documents/results/tv/table_main.tsv",
+		"/home/julius/Documents/results/tv/plot_allmain.png"
+
+rule preliminary:
+	"Create files for initial analyses. No real need to run this."
+	input:
 		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,23)),
 		expand("/home/julius/Documents/results/tv/report_tvmodelsX{i}.pdf", i=range(1,3)),
 		"/home/julius/Documents/results/tv/null-pvals.RData"
@@ -24,9 +30,21 @@ rule prep_pheno:
 		"/mnt/HARVEST/ga_cleaned.csv"
 	script:
 		"clean-pheno.R"
+
+rule analyze_all_main:
+	output:
+		maintable="/home/julius/Documents/results/tv/table_main.tsv",
+		mainplot="/home/julius/Documents/results/tv/plot_allmain.png"
+	input:
+		mfr="/mnt/HARVEST/ga_cleaned.csv",
+		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+		gtX="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+		mobares="/mnt/HARVEST/topsnps_moba_summaries.txt"
+	script:
+		"run-tvmodels-all.R"
 		
-rule analyze_tv:
-	"Run the actual analyses of top SNPs in TV models (autosomal SNPs only)."
+rule prel_analyze_tv:
+	"Run the preliminary reports for top SNPs in TV models (autosomal SNPs only)."
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
@@ -34,13 +52,13 @@ rule analyze_tv:
 	params:
 		outstem="/home/julius/Documents/results/tv/report_tvmodels"
 	output:
-		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,23))
+		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,24))
 	shell:  # This is daft but very important to enforce serial Rmd knitting!!!
-		""" Rscript -e "for(i in 1:22){{ rmarkdown::render('run-tvmodels.Rmd', params=list(mfrfile='{input.mfr}', gtfile='{input.gt}', mobaresfile='{input.moba}', i=i), output_format='pdf_document', output_file=paste0('{params.outstem}', i, '.pdf')) }}"
+		""" Rscript -e "for(i in 1:23){{ rmarkdown::render('run-tvmodels.Rmd', params=list(mfrfile='{input.mfr}', gtfile='{input.gt}', mobaresfile='{input.moba}', i=i), output_format='pdf_document', output_file=paste0('{params.outstem}', i, '.pdf')) }}"
 		"""
 
-rule analyze_tvX:
-	"Run the actual analyses of top SNPs in TV models (X chr. SNPs only)."
+rule prel_analyze_tvX:
+	"Run the preliminary reports for top SNPs in TV models (X chr. SNPs only)."
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		gt="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",  # note: this uses different sample size
