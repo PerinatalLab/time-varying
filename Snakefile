@@ -38,7 +38,7 @@ rule analyze_all_main:
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
-		gtX="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+		gtX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
 		mobares="/mnt/HARVEST/topsnps_moba_summaries.txt"
 	script:
 		"run-tvmodels-all.R"

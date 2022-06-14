@@ -15,7 +15,9 @@ mfr = read.table(mfrfile, h=T, sep=";")
 
 # clean a bit
 mfr = filter(mfr, is.na(ART), is.na(DAAR) | DAAR!=FAAR,
-             SVLEN_DG<295, is.na(FLERFODSEL),
+             SVLEN_DG<295,  # TODO double check this???
+             #SVLEN_DG<309,  # +1200 samples
+             is.na(FLERFODSEL),
              is.na(DIABETES_MELLITUS),
              is.na(ZSCORE_BW_GA) | abs(ZSCORE_BW_GA)<10)
 # 0 or NA APGARs almost always indicate big problems and aren't genotyped
@@ -77,7 +79,7 @@ mfr_mid$MAGE = mfr_mid$FAAR - mfr_mid$MOR_FAAR
 # Remove repeated pregnancies & genotyping duplicates:
 # (currently sorted by the meaningless pregid so removing a random one)
 mfr_mid = mfr_mid[!duplicated(mfr_mid$M_ID_1724),]
-nrow(mfr_mid)  # 25964 (or ~28700 before core flag)
+nrow(mfr_mid)  # 25648 (or ~28700 before core flag)
 
 mfr_mid = mfr_mid[,c("PREG_ID_1724", "SVLEN_DG", "hadevent", "BATCH", "MAGE", "FAAR",
                      "AA87", "KJONN", "MISD", "PARITET_5", "SENTRIX_ID")]
