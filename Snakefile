@@ -24,10 +24,12 @@ rule prep_pheno:
 		"/mnt/HARVEST/PDB1724_MFR_541_v12.csv",
 		"/mnt/HARVEST/parental_ID_to_PREG_ID.csv",
 		"/mnt/HARVEST/linkage_Mother_PDB1724.csv",
+		"/mnt/HARVEST/linkage_Child_PDB1724.csv",
 		"/mnt/HARVEST/mobagen-flaglist-n99259.txt",
 		"/mnt/HARVEST/PDB1724_Q1_v12.csv"
 	output:
-		"/mnt/HARVEST/ga_cleaned.csv"
+		"/mnt/HARVEST/ga_cleaned.csv",
+		"/mnt/HARVEST/ga_cleaned_f.csv"
 	script:
 		"clean-pheno.R"
 
@@ -37,6 +39,7 @@ rule analyze_all_main:
 		mainplot="/home/julius/Documents/results/tv/plot_allmain.png"
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
+		mfrF="/mnt/HARVEST/ga_cleaned_f.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
 		gtX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
 		mobares="/mnt/HARVEST/topsnps_moba_summaries.txt"
