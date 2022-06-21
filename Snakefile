@@ -42,7 +42,7 @@ rule analyze_all_main:
 		mfrF="/mnt/HARVEST/ga_cleaned_f.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
 		gtX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
-		mobares="/mnt/HARVEST/topsnps_moba_summaries.txt"
+		mobares="snplists/topsnps_meta_summaries.txt"
 	script:
 		"run-tvmodels-all.R"
 		
@@ -51,7 +51,7 @@ rule prel_analyze_tv:
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
-		moba="/mnt/HARVEST/topsnps_moba_summaries.txt"
+		moba="snplists/topsnps_meta_summaries.txt"
 	params:
 		outstem="/home/julius/Documents/results/tv/report_tvmodels"
 	output:
@@ -65,7 +65,7 @@ rule prel_analyze_tvX:
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		gt="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",  # note: this uses different sample size
-		moba="/mnt/HARVEST/topsnps_moba_summaries.txt"
+		moba="snplists/topsnps_meta_summaries.txt"
 	params:
 		outstem="/home/julius/Documents/results/tv/report_tvmodelsX"
 	output:
