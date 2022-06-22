@@ -9,7 +9,10 @@ rule all:
 	"Create all target files."
 	input:
 		"/home/julius/Documents/results/tv/table_main.tsv",
-		"/home/julius/Documents/results/tv/plot_allmain.png"
+		"/home/julius/Documents/results/tv/plot_allmain.png",
+		"/home/julius/Documents/results/tv/plot_suppcov.png",
+		"/home/julius/Documents/results/tv/plot_pgs5.png",
+		"/home/julius/Documents/results/tv/plot_pgs3.png"
 
 rule preliminary:
 	"Create files for initial analyses. No real need to run this."
@@ -21,11 +24,11 @@ rule preliminary:
 rule prep_pheno:
 	"Clean MFR, create a censoring indicator, export selected columns."
 	input:
-		"/mnt/HARVEST/PDB1724_MFR_541_v12.csv",
+		"/mnt/HARVEST/PDB1724_MFR_541_v12.csv",  # TODO all these are in /mnt/archive2/p1724/v12/, so redirect there
 		"/mnt/HARVEST/parental_ID_to_PREG_ID.csv",
 		"/mnt/HARVEST/linkage_Mother_PDB1724.csv",
 		"/mnt/HARVEST/linkage_Child_PDB1724.csv",
-		"/mnt/HARVEST/mobagen-flaglist-n99259.txt",
+		"/mnt/HARVEST/mobagen-flaglist-n99259.txt",  # "/mnt/archive/MOBAGENETICS/genotypes-base/aux/flaglist-merged/mobagen-flaglist-n99259.txt"
 		"/mnt/HARVEST/PDB1724_Q1_v12.csv"
 	output:
 		"/mnt/HARVEST/ga_cleaned.csv",
@@ -36,12 +39,16 @@ rule prep_pheno:
 rule analyze_all_main:
 	output:
 		maintable="/home/julius/Documents/results/tv/table_main.tsv",
-		mainplot="/home/julius/Documents/results/tv/plot_allmain.png"
+		mainplot="/home/julius/Documents/results/tv/plot_allmain.png",
+		suppplot="/home/julius/Documents/results/tv/plot_suppcov.png",
+		mainplotpgs="/home/julius/Documents/results/tv/plot_pgs5.png",
+		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png"
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		mfrF="/mnt/HARVEST/ga_cleaned_f.csv",
 		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
 		gtX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
+		gtF="/mnt/HARVEST/top1f-moba30k-dosage.csv.gz",
 		mobares="snplists/topsnps_meta_summaries.txt"
 	script:
 		"run-tvmodels-all.R"
@@ -87,11 +94,14 @@ rule simulate_null:
 # rule extract_gt:
 # 	"Extract the selected SNPs from complete genotyping data."
 # 	input:
-# 		inauto="../snplist-alltop.txt",
-# 		inx="../snplist-alltop.txt",
-# 		GENO_DATA_FILE
+# 		inauto="snplists/snplist-alltop.txt",
+# 		inx="snplists/snplist-xtop.txt",
+# 		inf="snplists/snplist-ftop.txt",
+# 		GENO_DATA_FILE_M,
+# 		GENO_DATA_FILE_F
 # 	output:
 # 		"/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
-# 		"/mnt/HARVEST/top1x-moba30k-dosage.csv.gz"
+# 		"/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
+# 		"/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
 # 	shell:
-# 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x"
+# 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x ; ./extract-snps-moba30k.sh {inf} top1f"
