@@ -12,7 +12,10 @@ rule all:
 		"/home/julius/Documents/results/tv/plot_allmain.png",
 		"/home/julius/Documents/results/tv/plot_suppcov.png",
 		"/home/julius/Documents/results/tv/plot_pgs5.png",
-		"/home/julius/Documents/results/tv/plot_pgs3.png"
+		"/home/julius/Documents/results/tv/plot_pgs3.png",
+		"/home/julius/Documents/results/tv/plot_supphaz.png",
+		"/home/julius/Documents/results/tv/table_diag.tsv",
+		"/home/julius/Documents/results/tv/plot_coxdiag.png"
 
 rule preliminary:
 	"Create files for initial analyses. No real need to run this."
@@ -42,7 +45,8 @@ rule analyze_all_main:
 		mainplot="/home/julius/Documents/results/tv/plot_allmain.png",
 		suppplot="/home/julius/Documents/results/tv/plot_suppcov.png",
 		mainplotpgs="/home/julius/Documents/results/tv/plot_pgs5.png",
-		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png"
+		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png",
+		supphaz="/home/julius/Documents/results/tv/plot_supphaz.png"
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
 		mfrF="/mnt/HARVEST/ga_cleaned_f.csv",
@@ -52,6 +56,20 @@ rule analyze_all_main:
 		mobares="snplists/topsnps_meta_summaries.txt"
 	script:
 		"run-tvmodels-all.R"
+		
+rule analyze_diagnostics:
+	output:
+		diagtable="/home/julius/Documents/results/tv/table_diag.tsv",
+		coxdiagplot="/home/julius/Documents/results/tv/plot_coxdiag.png"
+	input:
+		mfr="/mnt/HARVEST/ga_cleaned.csv",
+		mfrF="/mnt/HARVEST/ga_cleaned_f.csv",
+		gt="/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+		gtX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
+		gtF="/mnt/HARVEST/top1f-moba30k-dosage.csv.gz",
+		maintable="/home/julius/Documents/results/tv/table_main.tsv"
+	script:
+		"run-tvmodels-diag.R"
 		
 rule prel_analyze_tv:
 	"Run the preliminary reports for top SNPs in TV models (autosomal SNPs only)."

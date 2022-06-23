@@ -329,28 +329,50 @@ for(snpnum in 26:28){
 
 
 
-# TODO later will probably want to separate them by pvals into two plots.
-
 out
 write.table(out, snakemake@output$maintable, sep="\t", quote=F, row.names = F)
 
 out_plots = bind_rows(out_plots)
 
-old_plot = out_plots %>%
+# SUPP PLOT for insignificant hazards (Fig S2)
+out_plots %>%
+  mutate(rsid=unlist(lapply(strsplit(locus, " "), "[[", 1))) %>%
+  filter(rsid %in% out$rsid[out$lin.p>=0.05]) %>%
   ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=factor(GT), fill=factor(GT))) +
   geom_vline(xintercept = 37, col="grey80") +
   facet_wrap(~locus, scales="free_y") +
   geom_line(lwd=0.6) +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed") +
+  scale_color_manual(values=GTpalette, name="minor allele count") +
+  scale_fill_manual(values=GTpalette, name="minor allele count") +
+  scale_x_continuous(breaks=seq(23, 43, by=2)) +
+  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme(legend.position=c(0.85, 0.1), legend.box.background= element_rect(colour="black"),
+        strip.background = element_rect(fill="#E7E8D3"))
+
+ggsave(snakemake@output$supphaz, width=8, height=7, units="in")
+
+
+# MAIN PLOT (Fig 2)
+facetorder = sort(unique(out_plots$locus))
+facetp = as.numeric(unlist(lapply(strsplit(facetorder, "p="), "[[", 2)))
+old_plot = out_plots %>%
+  mutate(rsid=unlist(lapply(strsplit(locus, " "), "[[", 1))) %>%
+  mutate(locus=factor(locus, levels=facetorder[order(facetp)])) %>%
+  filter(rsid %in% out$rsid[out$lin.p<0.05]) %>%
+  ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=factor(GT), fill=factor(GT))) +
+  geom_vline(xintercept = 37, col="grey80") +
+  facet_wrap(~locus, scales="free_y", ncol=3) +
+  geom_line(lwd=0.6) +
   # geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed") +
-  scale_color_manual(values=GTpalette, name="allele count") +
-  scale_fill_manual(values=GTpalette, name="allele count") +
+  scale_color_manual(values=GTpalette, name="minor allele count") +
+  scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
   theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
   scale_y_continuous(expand = expansion(mult=0.3)) +
-  theme(legend.position=c(0.9, 0.1), legend.box.background= element_rect(colour="black"),
-        strip.background = element_rect(fill="#E7E8D3"))
+  theme(legend.position="bottom", strip.background = element_rect(fill="#E7E8D3"))
 
-# hax for setting tiny bit cleaner y axes
+# hax for setting tiny bit tighter y axes
 new_plot = old_plot +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed")
 old_plot_data = ggplot_build(old_plot)
@@ -458,7 +480,7 @@ ggplot(pred_df, aes(x=(tmid+GA_START_TIME)/7, y=fit, col=PGScat, fill=PGScat)) +
   theme(legend.position=c(0.85, 0.8), legend.box.background= element_rect(colour="black"),
         panel.grid.minor.x=element_blank())
 
-ggsave(snakemake@output$mainplotpgs, width=6, height=5, units="in")
+ggsave(snakemake@output$mainplotpgs, width=5.5, height=4.5, units="in")
 
 
 # SUPPLEMENT: different cuts
@@ -489,6 +511,9 @@ ggplot(pred_df, aes(x=(tmid+GA_START_TIME)/7, y=fit, col=PGScat, fill=PGScat)) +
 
 ggsave(snakemake@output$suppplotpgs, width=6, height=5, units="in")
 
+# "zoom in" on IL1A: where is it sign. diff. from 0?
+filter(out_plots, grepl("IL1", locus), GT>0, sign(ci_lower)==sign(ci_upper)) %>%
+  mutate(tmid=(tmid+GA_START_TIME)/7)
 
 
 # --------- experiments ------------
@@ -558,3 +583,7 @@ ggsave(snakemake@output$suppplotpgs, width=6, height=5, units="in")
 # burden score doesn't seem to be correlated to anything
 # rare = read.table("/mnt/HARVEST/plinktests/res_burden_rare-22.profile", h=T)[,c("FID", "CNT2")]
 # rare = inner_join(merged, rare, by=c("SENTRIX_ID"="FID"))
+
+res = read.table("~/Documents/results/tv/table_main.tsv", h=T)
+filter(res, lin.p>=0.05)
+filter(res, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
