@@ -1,0 +1,13 @@
+#conda env create -f environment.yml
+#name: moba_gwas
+channels:
+- conda-forge
+- bioconda
+dependencies:
+- r-base = 4.1.3
+- r-dplyr
+- r-ggplot2
+- r-data.table
+
+
+

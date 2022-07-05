@@ -1,0 +1,176 @@
+import pandas as pd
+import numpy as np
+
+chrom_list = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,"X"]
+pheno_glm = ["GD","PTD"]
+pheno_file = ["ga_cleaned","ga_cleaned_f"]
+
+rule all:
+    ''
+    input:
+        expand("/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt",pheno_file = pheno_file, pheno_glm = pheno_glm),
+        expand("/mnt/cargo/karin/main_moba_gwas/manhattan_moba_{pheno_file}_{pheno_glm}.png",pheno_file = pheno_file, pheno_glm = pheno_glm),
+        expand("/mnt/cargo/karin/main_moba_gwas/qq_plot_moba_{pheno_file}_{pheno_glm}.png",pheno_file = pheno_file, pheno_glm = pheno_glm),      
+        expand("/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}_h2.log",pheno_file = pheno_file, pheno_glm = pheno_glm),
+        "/mnt/cargo/karin/main_moba_gwas/beta_gd_ptd.png",
+        "/mnt/cargo/karin/main_moba_gwas/beta_meta_moba_gd.png"
+
+rule format_phenofile:
+    'prep for gwas' 
+    input: "/mnt/work2/jjuod/tv/{pheno_file}.csv"
+
+    output: "/mnt/work2/karin/main_moba_gwas/aux/{pheno_file}_phenofile.txt",
+        "/mnt/work2/karin/main_moba_gwas/aux/{pheno_file}_covar.txt"
+
+    run:
+        dat = pd.read_csv(input[0], header = 0, sep = ";")
+        dat = dat.loc[dat.hadevent==True,:]
+        dat["PTD"] = np.where(dat.SVLEN_DG < 259,2,1)
+        
+        dat["IID"] = dat.SENTRIX_ID
+        dat["GD"] = dat.SVLEN_DG
+        dat.to_csv(output[0], sep ="\t", header = True, index=False,columns=["IID","GD","PTD"])
+        dat.to_csv(output[1], sep="\t", header = True, index=False, columns=["IID","BATCH"])
+
+rule plink_glm:
+    'gwas'
+    input: "/mnt/work2/karin/main_moba_gwas/aux/{pheno_file}_phenofile.txt",
+        "/mnt/work2/karin/main_moba_gwas/aux/{pheno_file}_covar.txt",
+        "/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/vcf/{chrom}.vcf.gz"
+
+    output: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{chrom}.GD.glm.linear",
+        "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{chrom}.PTD.glm.logistic.hybrid"
+
+    params: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{chrom}"
+
+    threads: 6
+
+    shell:
+        '''
+        ~/soft/plink2 --vcf {input[2]} --pheno iid-only {input[0]} --covar iid-only {input[1]} --memory 10000 --threads {threads} --glm cols=+a1freq hide-covar --out {params[0]}
+        '''
+
+rule concatenate1:
+    'concatenate output from gwas'
+    input: expand("/mnt/work2/karin/main_moba_gwas/results/GWAS/{{pheno_file}}_{chrom}.GD.glm.linear", chrom=chrom_list )
+
+    output: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_GD.glm"
+
+    shell:
+        '''
+        head -1 {input[0]} > {output[0]}; tail -n +2 -q {input} >> {output[0]}
+        '''
+rule concatenate2:
+    'concatenate output from gwas'
+    input: expand("/mnt/work2/karin/main_moba_gwas/results/GWAS/{{pheno_file}}_{chrom}.PTD.glm.logistic.hybrid", chrom=chrom_list)
+
+    output: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_PTD.glm"
+
+    shell:
+        '''
+        head -1 {input[0]} > {output[0]}; tail -n +2 -q {input} >> {output[0]}
+        '''
+
+rule filter_summary:
+    'MAF > 1%, A1_FREQ != 0'
+    input: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}.glm"
+
+    output: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt"
+
+    resources: mem_mb = 20000
+
+    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+
+    script:"/home/karin.ytterberg/main_moba_gwas/scripts/filtering.R" 
+
+
+rule reformat_summary_statistics:
+    'Reformat sumstats according to ldsc.'
+    input:'/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt'
+
+    output: '/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}.txt.sumstats.gz'
+
+    params:'/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}.txt'
+
+    conda:'/home/karin.ytterberg/soft/ldsc/environment.yml'
+    shell:
+        """
+        set +eu
+        source /home/karin.ytterberg/miniconda3/etc/profile.d/conda.sh
+        conda activate ldsc
+        python2 /home/karin.ytterberg/soft/ldsc/munge_sumstats.py \
+        --merge-alleles /home/karin.ytterberg/soft/ldsc/w_hm3.snplist \
+        --out {params[0]} \
+        --sumstats {input[0]} \
+        --N 21732 \
+        --chunksize 500000 \
+        --snp "ID"  
+        conda deactivate
+        set -eu
+        """
+
+rule heritability:
+    'lambda and h2'
+    input:'/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}.txt.sumstats.gz'
+    output:'/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}_h2.log'
+    params:'/mnt/work2/karin/main_moba_gwas/results/ldsc/{pheno_file}_{pheno_glm}_h2'
+    conda:'/home/karin.ytterberg/soft/ldsc/environment.yml'
+    shell:
+        """
+        set +eu
+        source /home/karin.ytterberg/miniconda3/etc/profile.d/conda.sh
+        conda activate ldsc
+        python2 /home/karin.ytterberg/soft/ldsc/ldsc.py \
+        --h2 {input[0]} \
+        --ref-ld-chr /home/karin.ytterberg/soft/ldsc/eur_w_ld_chr/ \
+        --w-ld-chr /home/karin.ytterberg/soft/ldsc/eur_w_ld_chr/ \
+        --out {params[0]} 
+        conda deactivate
+        set -eu
+        """ 
+
+rule QQ_plot:
+    'qq-plot'
+    input: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt"
+
+    output:"/mnt/cargo/karin/main_moba_gwas/qq_plot_moba_{pheno_file}_{pheno_glm}.png"
+
+    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+
+    script: "/home/karin.ytterberg/main_moba_gwas/scripts/QQ_plot.R"
+
+
+rule manhattan_plot:
+    'manhattan plot'
+    input: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt",
+        "/home/karin.ytterberg/main_moba_gwas/top_snp/top_snp_{pheno_file}_{pheno_glm}.csv"
+
+    output: "/mnt/cargo/karin/main_moba_gwas/manhattan_moba_{pheno_file}_{pheno_glm}.png"
+
+    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+
+    script: "/home/karin.ytterberg/main_moba_gwas/scripts/manhattan_plot.R"
+
+rule beta_meta_vs_GD_plot:
+    '  '
+    input: "/home/karin.ytterberg/main_moba_gwas/top_snp/topsnp_gd.csv",
+        "/mnt/work2/karin/main_moba_gwas/results/GWAS/ga_cleaned_GD_filterd.txt"
+
+    output: "/mnt/cargo/karin/main_moba_gwas/beta_meta_moba_gd.png"
+
+    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+
+    script: "/home/karin.ytterberg/main_moba_gwas/scripts/beta_top_snp_gd_meta_vs_this_gwas.R"  
+
+
+rule beta_top_ptd_vs_gd_plot:
+    ' '
+    input:"/mnt/work2/karin/main_moba_gwas/results/GWAS/ga_cleaned_PTD_filterd.txt",
+        "/mnt/work2/karin/main_moba_gwas/results/GWAS/ga_cleaned_GD_filterd.txt"
+    output: "/mnt/cargo/karin/main_moba_gwas/beta_gd_ptd.png"
+
+    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+
+    script: "/home/karin.ytterberg/main_moba_gwas/scripts/beta_top_ptd_vs_gd.R"
+
+    

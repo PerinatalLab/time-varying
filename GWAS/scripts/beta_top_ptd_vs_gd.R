@@ -1,0 +1,49 @@
+library(dplyr)
+library(data.table)
+library(ggplot2)
+
+dat = fread(snakemake@input[[1]])
+dat2 = fread(snakemake@input[[2]])
+
+
+# Sig level
+dat = dat %>% filter(P<1*10**-5) %>% arrange(P) %>% group_by('#CHROM')
+
+final_pos_list = c()
+chrom_list = unique(ifelse(dat$"#CHROM"=="X",23,dat$"#CHROM") )
+
+# Extract sig snp, independent regions for top loci with a radius of 1.5 Mb, based on chromosome
+for (chrom in chrom_list) {
+        
+        chromosome = dat[dat$"#CHROM" == ifelse(chrom == 23, "X",chrom),]
+        positions = chromosome$POS
+        min_P = chromosome %>% arrange(P) %>% filter(row_number()==1) %>% pull(POS)
+        final_pos_list = append(final_pos_list, min_P )
+        for (pos in positions) {
+                if ( (!pos %in% final_pos_list) & (pos < final_pos_list - (1.5*10**6) | pos > final_pos_list + (1.5*10**6)) ) {
+                       final_pos_list = append(final_pos_list, pos)
+                }
+        }
+}
+
+#SNP to plot
+sig_snp = dat[dat$POS %in% final_pos_list, ]
+sig_snp2 = dat2[dat2$POS %in% final_pos_list, ]
+
+# convert OR to beta for sig_snp
+sig_snp$Beta = log(sig_snp$OR)
+
+# plot
+b = left_join(sig_snp, sig_snp2, by = "POS" )
+
+p = ggplot(b, aes(x=Beta, y=BETA)) + 
+	geom_point(pch=19,color="blue",size=3) +
+       	ylab("Beta (Gestational duration)") + 
+	xlab("Beta (Preterm delivery)") + 
+	ggtitle("Beta of top loci of preterm delivery analysis against gestational duration") + 
+	geom_abline(intercept = 0, slope = -1, alpha = .5)
+
+ggsave(snakemake@output[[1]],p)
+
+
+
