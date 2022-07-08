@@ -11,8 +11,9 @@ library(tidyr)
 # SETUP
 
 # mfrfile="/mnt/HARVEST/ga_cleaned.csv"
+# pgsfile = "/mnt/HARVEST/PGS.txt"
 mfrfile = snakemake@input$mfr
-pgsfile = "/mnt/HARVEST/PGS.txt"
+pgsfile = snakemake@input$pgs
 
 # some constants:
 GA_START_TIME = 169
@@ -22,6 +23,8 @@ pal5 = RColorBrewer::brewer.pal(5, "RdYlBu")
 pal5[1] = "#FF410D"
 pal5[2] = "#F7C530"
 pal5[3] = "#ABB084"
+# desaturated pal5 if need a bit calmer plotting
+# pal5_desat = c("#FF9F85", "#FBE297", pal5[3], pal5[4], "#95BCDA")
 
 
 # -------------------------------------------
@@ -48,7 +51,6 @@ mfr_mid$GAc = mfr_mid$SVLEN_DG-GA_START_TIME
 
 # just some checks
 range(mfr_mid$GAc)  # 1 139
-
 
 
 # -------------------------------------------
@@ -105,216 +107,263 @@ pmain = ggplot(pred_df, aes(x=(tmid+GA_START_TIME)/7, y=fit, col=PGScat, fill=PG
   scale_x_continuous(breaks=seq(23, 43, by=2), expand=c(0,0)) +
   ylim(c(-1.2, 2.2)) + 
   theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
-  theme(legend.position=c(0.85, 0.8), legend.box.background= element_rect(colour="black"),
+  theme(legend.position=c(0.87, 0.75), legend.box.background= element_rect(colour="black"),
         panel.grid.minor.x=element_blank(), legend.title = element_text(size=10))
 pmain
+
+# Show the same with a basic, unadjusted binary test:
+summary(glm(SVLEN_DG<259 ~ PGScat + BATCH,
+            data=merged[merged$hadevent,], family="binomial"))  # only 1-2 are sign. vs 3
+summary(glm(SVLEN_DG<224 ~ PGScat + BATCH,
+            data=merged[merged$hadevent,], family="binomial"))  # only 1 is sign. vs 3
+
+vecPropTest = Vectorize(prop.test, SIMPLIFY = F)
+prisk = group_by(merged, PGScat_rel) %>%
+  summarize(f_vptd=mean(SVLEN_DG<7*32), f_ptd=mean(SVLEN_DG<7*37), n=n()) %>%
+  gather(key="pheno", value="f", f_vptd:f_ptd) %>%
+  mutate(ci_lo = sapply(vecPropTest(f*n, n), function(x) x$conf.int[1]),
+         ci_upp = sapply(vecPropTest(f*n, n), function(x) x$conf.int[2])) %>%
+  mutate(pheno=factor(pheno, labels=c("PTD", "vPTD"))) %>%
+  ggplot(aes(x=PGScat_rel, y=f*100)) +
+  geom_col(aes(fill=PGScat_rel), alpha=0.5) + 
+  geom_linerange(aes(ymin=ci_lo*100, ymax=ci_upp*100)) +
+  facet_wrap(~pheno, scales="free_y") +
+  xlab(NULL) + ylab("risk, %") +
+  scale_fill_manual(values=pal5, name="GA PGS quintile", guide="none") +
+  scale_y_continuous(expand=expansion(add=c(0, 0), mult=c(0,0.05))) +
+  theme_bw() +
+  theme(strip.background = element_rect(fill="#E7E8D3"),
+        panel.grid.major.x = element_blank(), panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank())
+prisk
+
+plot_grid(pmain, prisk, labels="AUTO", nrow=2, rel_heights=c(3,2))
 
 ggsave(snakemake@output$mainplotpgs, width=5.5, height=4.5, units="in")
 
 
+# ----------------
+# Exploratory part.
+# To show:
+# 1. rare alleles are not enriched in group 1
+# 2. recessive genotypes are not enriched in group 1
+# 3. PC3 is correlated w/ vPTD
+# 4. PC3 contains lots of immunity
+
+# 1. rare alleles are not enriched in group 1
+rare = read.table("/mnt/HARVEST/plinktests/res_burden_below0.001_rare.sscore", h=T, comment.char = "")
+head(rare)
+rare$CNT = rare$NAMED_ALLELE_DOSAGE_SUM
+
+rare = inner_join(merged, rare[,c("IID", "CNT")], by=c("SENTRIX_ID"="IID"))
+
+# it is linearly related to PGS
+# it is not helping to predict vPTD
+summary(lm(SVLEN_DG ~ PGS + CNT + BATCH, data=rare[rare$hadevent,]))
+summary(glm(SVLEN_DG<259 ~ PGS + CNT + BATCH,
+            data=rare[rare$hadevent,], family="binomial"))
+vptd_pval = summary(glm(SVLEN_DG<224 ~ PGS + CNT + BATCH,
+                        data=rare[rare$hadevent,], family="binomial")) # note: 0/1 probs w/ many covars so simplified models here
+vptd_pval
+vptd_pval = vptd_pval$coefficients["CNT",4]
+pgs_r = cor(rare$PGS, rare$CNT)
+
+p_rare = mutate(rare, PGScat_rel=factor(PGScat_rel, labels=c("1st", "2nd", "3rd", "4th", "5th"))) %>%
+  ggplot(aes(x=PGScat_rel, y=CNT)) + geom_boxplot() +
+  ylab("minor allele count") + xlab("GA PGS quintile") +
+  annotate("text", x="2nd", y=700, hjust=-0.0, size=3,
+           label=sprintf("r=%.2g, vPTD p=%.2g", pgs_r, vptd_pval)) +
+  theme_bw() + theme(panel.grid.major.x=element_blank(), 
+                     axis.title = element_text(size=9))
+p_rare
+
+
+# 2. recessive genotypes are not enriched in group 1
+rare2 = read.table("/mnt/HARVEST/plinktests/res_burden_below0.001_rec.sscore", h=T, comment.char = "")
+head(rare2)
+rare2$CNT_GT = rare2$NAMED_ALLELE_DOSAGE_SUM
+
+rare = inner_join(rare, rare2[,c("IID", "CNT_GT")], by=c("SENTRIX_ID"="IID"))
+
+# it is linearly related to PGS
+# it is not helping to predict vPTD
+summary(lm(SVLEN_DG ~ PGS + CNT_GT + BATCH, data=rare[rare$hadevent,]))
+summary(glm(SVLEN_DG<259 ~ PGS + CNT_GT + BATCH,
+            data=rare[rare$hadevent,], family="binomial"))
+summary(glm(SVLEN_DG<224 ~ PGS + CNT_GT + BATCH,
+            data=rare[rare$hadevent,], family="binomial"))
+
+vptd_pval_gt = summary(glm(SVLEN_DG<224 ~ PGS + CNT_GT + BATCH,
+                        data=rare[rare$hadevent,], family="binomial")) # note: 0/1 probs w/ many covars so simplified models here
+vptd_pval_gt
+vptd_pval_gt = vptd_pval_gt$coefficients["CNT_GT",4]
+pgs_r_gt = cor(rare$PGS, rare$CNT_GT)
+
+p_gt = mutate(rare, PGScat_rel=factor(PGScat_rel, labels=c("1st", "2nd", "3rd", "4th", "5th"))) %>%
+  ggplot(aes(x=PGScat_rel, y=CNT_GT)) + geom_boxplot() +
+  ylab("minor hom. genotype count") + xlab("GA PGS quintile") +
+  annotate("text", x="2nd", y=830, hjust=-0.0, size=3,
+           label=sprintf("r=%.2g, vPTD p=%.2g", pgs_r_gt, vptd_pval_gt)) +
+  theme_bw() + theme(panel.grid.major.x=element_blank(),
+                     axis.title = element_text(size=9))
+p_gt
+
+# we have also done this w/ different GT counting methods,
+# positive alleles, different strength cutoffs, MAF limits.
+# All were smoothly decreasing w/ PGS.
+
+# a proxy for possible order 2 GxG interaction count
+rare$SQCNT = rare$CNT*(rare$CNT-1)/2
+ggplot(rare, aes(x=PGScat_rel, y=SQCNT)) + geom_boxplot()  # still really linear
+
+
+# 3. PC3 is correlated w/ vPTD
+pcs = read.table("/mnt/HARVEST/plinktests/pca.eigenvec", h=T, comment.char = "")
+dim(pcs)
+pcs = inner_join(merged, pcs, by=c("SENTRIX_ID"="IID"))
+
+summary(lm(GAc ~ PGS + BATCH + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data=pcs[pcs$hadevent,]))
+summary(glm(SVLEN_DG<259 ~ PGS + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
+            data=pcs[pcs$hadevent,], family="binomial"))
+summary(glm(SVLEN_DG<224 ~ PGS + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
+            data=pcs[pcs$hadevent,], family="binomial"))
+summary(glm(SVLEN_DG<224 ~ PGS + PC3 + BATCH,
+            data=pcs[pcs$hadevent,], family="binomial"))
+
+# PC3 is still sign. even w/ non-linear PGS and clinical covars (except parity to allow fitting)
+summary(glm(SVLEN_DG<224 ~ PGS + PGScat + PC3 + BATCH +
+              poly(MAGE,2) + FAAR + AA87 + KJONN + MISD,
+            data=pcs[pcs$hadevent,], family="binomial"))
+
+ggplot(pcs, aes(x=PGScat_rel, y=PC3)) + geom_boxplot()
+cor.test(pcs$PC3, pcs$PGS)  # only weakly related to PGS
+
+ggplot(pcs, aes(x=PC2, y=PC3, col=BATCH)) + geom_point() # not a batch effect
+
+# We also checked that PC3 is not related to reported birth country
+# (also none of the birth countries related to vPTD)
+# and adding the PC to the PAM doesn't change anything.
+
+
+vptd_pval = summary(glm(SVLEN_DG<224 ~ PGS + PC3 + BATCH,
+                        data=pcs[pcs$hadevent,], family="binomial"))
+vptd_pval
+vptd_pval = vptd_pval$coefficients["PC3",4]
+
+# mutate(pcs, PC3cat=cut(-PC3, quantile(-pcs$PC3, (0:5)/5), include.lowest=T, labels=1:5)) %>%
+#   group_by(PC3cat) %>%
+#   summarize(f_vptd=mean(SVLEN_DG<7*32), f_ptd=mean(SVLEN_DG<7*37), n=n()) %>%
+#   gather(key="pheno", value="f", f_vptd:f_ptd) %>%
+#   mutate(ci_lo = sapply(vecPropTest(f*n, n), function(x) x$conf.int[1]),
+#          ci_upp = sapply(vecPropTest(f*n, n), function(x) x$conf.int[2])) %>%
+#   mutate(pheno=factor(pheno, labels=c("PTD", "vPTD"))) %>%
+#   ggplot(aes(x=PC3cat, y=f)) +
+#   geom_col(aes(fill=PC3cat), alpha=0.5) + 
+#   geom_linerange(aes(ymin=ci_lo, ymax=ci_upp)) +
+#   facet_wrap(~pheno, scales="free_y") +
+#   xlab("GA PGS quintile") + ylab("risk") +
+#   scale_fill_manual(values=pal5, name="GA PGS quintile", guide="none") +
+#   theme_bw() + theme(strip.background = element_rect(fill="#E7E8D3"))
+
+# let's see what goes into PC3
+# loadings:
+loads = read.table("/mnt/HARVEST/plinktests/pca.eigenvec.allele", h=T, comment.char = "")
+head(loads)
+
+# positions:
+chr6pos = read.table("/mnt/HARVEST/plinktests/chr6-maf1-M.bim")
+head(chr6pos)
+chr6pos = inner_join(loads, chr6pos, by=c("ID"="V2", "A1"="V5", "X.CHROM"="V1"))
+
+# high loadings in chr 6, in particular in HLA region!
+p_allchr = filter(loads, abs(PC3)>1.0) %>%
+  ggplot() + geom_boxplot(aes(x=X.CHROM, group=X.CHROM, y=abs(PC3), col=X.CHROM==6)) +
+  xlab("chromosome") + ylab("loading magnitude") +
+  scale_y_continuous(expand = c(0,0,0,0.7)) + 
+  scale_color_manual(values=c("black", "#B54A4A"), guide="none") + 
+  theme_bw() + theme(panel.grid.major.x=element_blank(),
+                     axis.title=element_text(size=10))
+
+p_chr6zoom = filter(chr6pos, X.CHROM==6) %>%
+  mutate(hla=V4>28477797 & V4<33448354) %>%
+  ggplot() + geom_point(aes(x=V4/1e6, y=abs(PC3), col=hla), size=0.6) +
+  scale_y_continuous(expand = c(0,0,0,0.1)) + scale_x_continuous(expand=c(0,1,0,1)) +
+  xlab("position, Mbp") + ylab(NULL) + # ylab("loading magnitude") +
+  scale_color_manual(values=c("black", "#B54A4A"), guide="none") + 
+  theme_bw() + theme(panel.grid.minor.x=element_blank(), panel.grid.minor.y=element_blank(),
+                     axis.title=element_tex(size=9))
+# around 6p21.3 marked, positions from https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC?asm=GRCh37
+
+p_pc3 = ggdraw(p_allchr) +
+  draw_plot(p_chr6zoom, x=0.43, y=0.57, width=0.55, height=0.45)
+  # draw_line(x=c(0.345, 0.475), y=c(0.8, 0.96), col="grey60") +  # maybe connect w/ lines?
+  # draw_line(x=c(0.33, 0.36), y=c(0.8, 0.8), col="grey60")
+
+p_rare_gt = plot_grid(p_rare, p_gt)
+plot_grid(p_rare_gt, p_pc3, labels="AUTO", nrow=2, rel_heights=c(2.2,2))
+
+ggsave(snakemake@output$mainplotpca, width=4.5, height=5.8, units="in")
+
+
 
 #### experimenting
+# pcs?...
+
+# check if range-limited "PC3" can be used to predict vPTD
+# ("scores" based on chr6 alleles w/ weights from pc3)
+tmp1 = read.table("/mnt/HARVEST/plinktests/score-pc3-nochr6.profile", h=T)
+colnames(tmp1)[6] = "SCOREno6"
+pcs2 = inner_join(pcs, tmp1[,c("IID", "SCOREno6")], by=c("SENTRIX_ID"="IID"))
+
+tmp1 = read.table("/mnt/HARVEST/plinktests/score-pc3-chr6.profile", h=T)
+colnames(tmp1)[6] = "SCOREonly6"
+pcs2 = inner_join(pcs2, tmp1[,c("IID", "SCOREonly6")], by=c("SENTRIX_ID"="IID"))
+
+tmp1 = read.table("/mnt/HARVEST/plinktests/score-pc3-hla.profile", h=T)
+colnames(tmp1)[6] = "SCOREonlyHLA"
+pcs2 = inner_join(pcs2, tmp1[,c("IID", "SCOREonlyHLA")], by=c("SENTRIX_ID"="IID"))
+
+head(pcs2)
+
+cor.test(pcs2$PC3, pcs2$SCOREno6) # although still r=0.99
+cor.test(pcs2$PC3, pcs2$SCOREonly6) # v strong corr
+cor.test(pcs2$PC3, pcs2$SCOREonlyHLA) # v strong corr
+cor.test(pcs2$SCOREno6, pcs2$SCOREonly6)  # hmm
+
+summary(glm(SVLEN_DG<224 ~ PGS + SCOREno6 + BATCH,
+            data=pcs2[pcs2$hadevent,], family="binomial"))  # not predictive of vPTD though
+
+
+cor.test(pgsnohla$SCORESUM, pgsnohla$PC3) # not related to chr1-5,7-22-X PGS
+cor.test(pgsnohla$PGS-pgsnohla$SCORESUM, pgsnohla$PC3) # but related to chr6 PGS!
 
 
 
-# predicting PTD or vPTD: polynomials only support linear term,
-# in categories only the risk ones (1-2 or 1) are significant
-summary(lm(GAc ~ poly(PGS, 3) + BATCH, data=merged[merged$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ poly(PGS,3) + BATCH,
-            data=merged[merged$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<259 ~ PGScat + BATCH,
-            data=merged[merged$hadevent,], family="binomial"))
+# "scores" based on chr6 alleles w/ weights from PGS_GA
+pgsnohla = read.table("/mnt/HARVEST/plinktests/pgs-nochr6.profile", h=T)
+pgsnohla = inner_join(pcs, pgsnohla[,c("IID", "SCORESUM")], by=c("SENTRIX_ID"="IID"))
+head(pgsnohla)
+cor.test(pgsnohla$SCORESUM, pgsnohla$PGS) # PGS mostly preserved
+summary(glm(SVLEN_DG<224 ~ SCORESUM + PC3 + BATCH,  # and still predictive of vPTD
+            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))
+cor.test(pgsnohla$SCORESUM, pgsnohla$PC3) # not related to chr1-5,7-22-X PGS
 
-summary(glm(SVLEN_DG<224 ~ poly(PGS,3) + BATCH,
-            data=merged[merged$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGScat + BATCH,
-            data=merged[merged$hadevent,], family="binomial"))
-
-vecPropTest = Vectorize(prop.test, SIMPLIFY = F)
-group_by(merged, PGScat_rel) %>%
-  summarize(f_vptd=mean(SVLEN_DG<7*32), f_ptd=mean(SVLEN_DG<7*37), n=n()) %>%
-  gather(key="pheno", value="f", f_vptd:f_ptd) %>%
-  mutate(ci_lo = sapply(vecPropTest(f*n, n), function(x) x$conf.int[1]),
-         ci_upp = sapply(vecPropTest(f*n, n), function(x) x$conf.int[2])) %>%
-  mutate(pheno=factor(pheno, labels=c("PTD", "vPTD"))) %>%
-  ggplot(aes(x=PGScat_rel, y=f)) +
-  geom_col(aes(fill=PGScat_rel), alpha=0.5) + 
-  geom_linerange(aes(ymin=ci_lo, ymax=ci_upp)) +
-  facet_wrap(~pheno, scales="free_y") +
-  xlab("GA PGS quintile") + ylab("risk") +
-  scale_fill_manual(values=pal5, name="GA PGS quintile", guide="none") +
-  theme_bw() + theme(strip.background = element_rect(fill="#E7E8D3"))
-
-# hmmm. 5group predictions are wobbly, but 3 group are decently linear
+pgsonlyhla = read.table("/mnt/HARVEST/plinktests/pgs-onlychr6.profile", h=T)
+pgsonlyhla = inner_join(pcs, pgsonlyhla[,c("IID", "SCORESUM")], by=c("SENTRIX_ID"="IID"))
+cor.test(pgsonlyhla$SCORESUM, pgsonlyhla$PC3) # but related to chr6 PGS!
 
 
-# no enrichment of rare deleterious alleles:
-rare = read.table("/mnt/HARVEST/plinktests/res_burdend_rare.profile", h=T)
+# "score" based on chr6 alleles w/ weights from pc3:
+hlascore = read.table("/mnt/HARVEST/plinktests/score-pc3-chr6.profile", h=T)
+colnames(hlascore)[6] = "HLASCORE"
+pgsnohla = inner_join(pgsnohla, hlascore[,c("IID", "HLASCORE")], by=c("SENTRIX_ID"="IID"))
+head(pgsnohla)
+cor.test(pgsnohla$PC3, pgsnohla$HLASCORE) # v strong corr, chr6 explains a lot of PC3
+cor.test(pgsnohla$PGS, pgsnohla$PC3) # related to PGS?... r=0.03 though
+pgsnohla$HLASCORE = pgsnohla$HLASCORE/100
 
-rare = read.table("/mnt/HARVEST/plinktests/res_burden_above0.003.profile", h=T)
-rare$SCORESUM = rare$SCORE
-
-# rare = read.table("/mnt/HARVEST/plinktests/res_burden_below0_p2.sscore", h=T, comment.char = "") # same w/ plink2
-
-rare = inner_join(rare[,c("IID", "SCORESUM")], merged, by=c("IID"="SENTRIX_ID"))
-cor.test(rare$SCORESUM, rare$PGS)
-ggplot(rare, aes(x=PGScat_rel, y=SCORESUM)) + geom_boxplot()
-# undirected count not related to pgs, weighted obv related and smooth w/ PGS groups
-
-summary(lm(SVLEN_DG ~ SCORESUM + BATCH, data=rare[rare$hadevent,]))
-summary(lm(SVLEN_DG ~ PGS + SCORESUM + BATCH, data=rare[rare$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ PGS + SCORESUM + BATCH,
-            data=rare[rare$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGS + SCORESUM + BATCH,
-            data=rare[rare$hadevent,], family="binomial"))
-# rare-only scores do not add anything to pgs w/ either weighting
-# could be interesting to show the plot w/ deleterious rare burden
-# (that it is smoothly decr w/ PGS groups)
-
-# just to see that it is not predicting vPTD:
-rare = mutate(rare, BURcat=cut(SCORESUM, breaks=quantile(rare$SCORESUM, (0:5)/5),
-                               labels=1:5, include.lowest=T))
-group_by(rare, BURcat) %>%
-  summarize(f_vptd=mean(SVLEN_DG<7*32), f_ptd=mean(SVLEN_DG<7*37), n=n()) %>%
-  gather(key="pheno", value="f", f_vptd:f_ptd) %>%
-  mutate(ci_lo = sapply(vecPropTest(f*n, n), function(x) x$conf.int[1]),
-         ci_upp = sapply(vecPropTest(f*n, n), function(x) x$conf.int[2])) %>%
-  mutate(pheno=factor(pheno, labels=c("PTD", "vPTD"))) %>%
-  ggplot(aes(x=BURcat, y=f)) +
-  geom_col(aes(fill=BURcat), alpha=0.5) + 
-  geom_linerange(aes(ymin=ci_lo, ymax=ci_upp)) +
-  facet_wrap(~pheno, scales="free_y") +
-  xlab("BURDEN_del quintile") + ylab("risk") +
-  scale_fill_manual(values=pal5, guide="none") +
-  theme_bw() + theme(strip.background = element_rect(fill="#E7E8D3"))
-
-
-# non-rare negative counts (unweighted) correlated to PGS strongly and smoothly
-# same for positive (unweighted) counts
-
-
-# ----------------
-# Trying smth w/ interactions
-
-rare = read.table("/mnt/HARVEST/plinktests/res_burden_below0.01_p2_rec.sscore", h=T, comment.char = "") # recessive
-# NOTE: autosome only due to plink's rec mode limitations
-rare$SCORESUM = rare$SCORE1_AVG
-
-rare$INTSCORE = rare$SCORESUM*(502*rare$SCORESUM-1)/2  # obv under-scaled by n for true interaction count
-rare$INTSCORE = (rare$SCORESUM*20)^4
-
-head(rare)
-range(rare$SCORESUM)
-qplot(rare$INTSCORE)
-qplot(rare$SCORESUM, rare$INTSCORE)
-
-rare = inner_join(rare[,c("IID", "SCORESUM", "INTSCORE")], merged, by=c("IID"="SENTRIX_ID"))
-cor.test(rare$SCORESUM, rare$PGS)
-cor.test(rare$INTSCORE, rare$PGS)
-ggplot(rare, aes(x=PGScat_rel, y=INTSCORE)) + geom_boxplot()
-group_by(rare, PGScat_rel) %>%
-  summarize(mean(INTSCORE), median(INTSCORE))
-
-summary(lm(SVLEN_DG ~ SCORESUM + BATCH, data=rare[rare$hadevent,]))
-summary(lm(SVLEN_DG ~ PGS + INTSCORE + BATCH, data=rare[rare$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ PGS + INTSCORE + BATCH,
-            data=rare[rare$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGS + INTSCORE + BATCH,
-            data=rare[rare$hadevent,], family="binomial"))
-
-
-
-
-
-
-
-# -----
-# genotype counts
-
-pgs1 = merged$SENTRIX_ID[merged$PGScat=="1st (shortest)"]
-write.table(data.frame(pgs1, pgs1), col.names = F, sep="\t", row.names = F, quote=F, file="/mnt/HARVEST/plinktests/pgs1.fam")
-pgs1 = merged$SENTRIX_ID[merged$PGScat=="2nd"]
-write.table(data.frame(pgs1, pgs1), col.names = F, sep="\t", row.names = F, quote=F, file="/mnt/HARVEST/plinktests/pgs2.fam")
-pgs1 = merged$SENTRIX_ID[merged$PGScat=="3rd"]
-write.table(data.frame(pgs1, pgs1), col.names = F, sep="\t", row.names = F, quote=F, file="/mnt/HARVEST/plinktests/pgs3.fam")
-pgs1 = merged$SENTRIX_ID[merged$PGScat=="4th"]
-write.table(data.frame(pgs1, pgs1), col.names = F, sep="\t", row.names = F, quote=F, file="/mnt/HARVEST/plinktests/pgs4.fam")
-pgs1 = merged$SENTRIX_ID[merged$PGScat=="5th (longest)"]
-write.table(data.frame(pgs1, pgs1), col.names = F, sep="\t", row.names = F, quote=F, file="/mnt/HARVEST/plinktests/pgs5.fam")
-
-pgs1wt = read.table("/mnt/HARVEST/plinktests/pgs1counts.frqx", h=T, sep="\t")
-pgs3wt = read.table("/mnt/HARVEST/plinktests/pgs3counts.frqx", h=T, sep="\t")
-pgs5wt = read.table("/mnt/HARVEST/plinktests/pgs5counts.frqx", h=T, sep="\t")
-betas = read.table("/mnt/HARVEST/plinktests/betas_all.txt", h=T)
-betas_flipped = mutate(betas, W_Beta=-W_Beta)  # need to join both ways as some alleles near 0.5 may flip differently
-pgs1wt = bind_rows(inner_join(pgs1wt, betas, by=c("SNP"="rsid", "A1"="a1")),
-                   inner_join(pgs1wt, betas_flipped, by=c("SNP"="rsid", "A2"="a1")))
-pgs3wt = bind_rows(inner_join(pgs3wt, betas, by=c("SNP"="rsid", "A1"="a1")),
-                   inner_join(pgs3wt, betas_flipped, by=c("SNP"="rsid", "A2"="a1")))
-pgs5wt = bind_rows(inner_join(pgs5wt, betas, by=c("SNP"="rsid", "A1"="a1")),
-                   inner_join(pgs5wt, betas_flipped, by=c("SNP"="rsid", "A2"="a1")))
-
-gtcnt = bind_rows("1"=pgs1wt, "3"=pgs3wt, "5"=pgs5wt, .id="PGS")
-gtcnt = group_by(gtcnt, SNP) %>%
-  mutate(mac=2*sum(C.HOM.A1.)+sum(C.HET.))
-group_by(gtcnt, PGS) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.))  # ignoring direction, counts are equal
-gtcnt = ungroup(gtcnt) %>%
-  mutate(maf = mac/30768)
-
-# no enrichment of recessive deleterious genotypes:
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta < 0) %>%  # drop the ones near 0.5 to avoid dealing w/ different flips
-  summarize(n(), mean(C.HOM.A1.), mean(C.HOM.A2.)) # these counts again are smooth w/ PGS
-
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta < -0.01) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.)) # even more so for stronger SNPs
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta < -0.1) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.)) # even more so for stronger SNPs
-
-filter(gtcnt, maf<0.40, W_Beta < -0.01) %>%
-  ggplot(aes(x=PGS, y=C.HOM.A1.)) + geom_boxplot()  # visually - smooth w/ PGS again
-
-filter(gtcnt, maf<0.2, W_Beta < -0.01) %>%
-  ggplot(aes(x=PGS, y=C.HOM.A1.)) + geom_boxplot()  # visually - smooth w/ PGS again
-
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.1, W_Beta < -0.0005) %>%
-  summarize(n(), mean(C.HOM.A1.), mean(C.HOM.A2.)) # also for rarer SNPs
-filter(gtcnt, maf<0.1, W_Beta < -0.0005) %>%
-  ggplot(aes(x=PGS, y=C.HOM.A1.)) + geom_boxplot()
-
-
-# counts of positive alleles look the same
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta > 0) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.)) # smooth so far
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta > 0.001) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.))
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.40, W_Beta > 0.01) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.))
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.20, W_Beta > 0.01) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.))
-group_by(gtcnt, PGS) %>%
-  filter(maf<0.10, W_Beta > 0.0005) %>%
-  summarize(mean(C.HOM.A1.), mean(C.HOM.A2.))  # all smooth
-
-filter(gtcnt, maf<0.1, W_Beta > 0.0005) %>%
-  ggplot(aes(x=PGS, y=C.HOM.A1.)) + geom_boxplot()
-
-
-mutate(gtcnt, eff=C.HOM.A1.+C.HOM.A2.) %>%
-  group_by(PGS) %>%
-  # filter(maf<0.40) %>%
-  summarize(meff=mean(eff), mean(C.HOM.A2.), mean(C.HOM.A1.))
-# no enrichment in any recessive or all homozygous gt, in short.
-
-
+summary(glm(SVLEN_DG<224 ~ PGS + HLASCORE + BATCH,
+            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))  # not predictive of vPTD though
 
 
 
@@ -383,116 +432,7 @@ ggsave(snakemake@output$suppplotpgs, width=8, height=5, units="in")
 
 
 
-# -----------------------------
-
-# read in plink's heterozygosity output
-het = read.table("/mnt/HARVEST/plinktests/het-pgs.het", h=T)
-het$Fsum = het$F
-het = inner_join(merged, het[,c("IID", "Fsum")], by=c("SENTRIX_ID"="IID"))
-cor.test(het$PGS, het$Fsum)
-het %>%
-  group_by(PGScat_rel) %>%
-  summarize(Fmean=mean(Fsum)) %>%
-  ggplot(aes(x=PGScat_rel, y=Fmean)) + geom_point()
-
-summary(lm(GAc ~ PGS + Fsum + BATCH, data=het[het$hadevent,])) # F slightly predictive here but not at all for (v)PTD
-summary(lm(GAc ~ PGScat + Fsum + BATCH, data=het[het$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ PGS + Fsum + BATCH,
-            data=het[het$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGS + Fsum + BATCH,
-            data=het[het$hadevent,], family="binomial"))
-
-summary(lm(GAc ~ PGS + Fsum, data=het[het$hadevent & het$Fsum<0.07,]))
-summary(glm(SVLEN_DG<224 ~ PGS + Fsum + BATCH,
-            data=het[het$hadevent & het$Fsum<0.07,], family="binomial"))
-
-
-# ------
-# pcs?...
-pcs = read.table("/mnt/HARVEST/plinktests/pca.eigenvec", h=T, comment.char = "")
-dim(pcs)
-pcs = inner_join(merged, pcs, by=c("SENTRIX_ID"="IID"))
-
-summary(lm(GAc ~ PGS + BATCH + PC1, data=pcs[pcs$hadevent,]))
-summary(lm(GAc ~ PGS + BATCH + PC1 + PC2 + PC3 + PC4 + PC5, data=pcs[pcs$hadevent,]))
-summary(glm(SVLEN_DG<259 ~ PGS + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
-            data=pcs[pcs$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGS +  PGScat + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
-            data=pcs[pcs$hadevent,], family="binomial"))
-summary(glm(SVLEN_DG<224 ~ PGS + PGScat + PC1 + PC2 + PC3 + BATCH +
-              poly(MAGE,2) + FAAR + AA87 + KJONN + MISD,
-            data=pcs[pcs$hadevent,], family="binomial")) # a bit simplified to allow fitting
-            # clinical covs don't change anything though
-pcs = inner_join(pcs, het, by=c("SENTRIX_ID"="IID"))
-ggplot(pcs, aes(x=PC1, y=Fsum, col=BATCH)) + geom_point() # no batch effects at least
-pcs %>%
-  group_by(PGScat_rel) %>%
-  summarize(PC3mean=mean(PC3)) %>%
-  ggplot(aes(x=PGScat_rel, y=PC3mean)) + geom_boxplot()
-
-# PC3 is predictive of vPTD. Checked and not related to reported birth country
-# (also none of the birth countries related to vPTD)
-# (also adding the PC to the PAM doesn't change anything)
-
-loads = read.table("/mnt/HARVEST/plinktests/pca.eigenvec.allele", h=T, comment.char = "")
-head(loads)
-loads = inner_join(loads, betas, by=c("ID"="rsid", "A1"="a1"))
-nrow(loads)
-
-cor.test(loads$W_Beta, loads$PC3)  # not related
-ggplot(loads) + geom_boxplot(aes(x=X.CHROM, group=X.CHROM, y=abs(PC3)))
-filter(loads, abs(PC3)>0.8) %>%
-  ggplot() + geom_boxplot(aes(x=X.CHROM, group=X.CHROM, y=abs(PC3))) # no obv chrom stands out
-
-
-pgsnohla = read.table("/mnt/HARVEST/plinktests/pgs-nochr6.profile", h=T)
-pgsnohla = inner_join(pcs, pgsnohla[,c("IID", "SCORESUM")], by=c("SENTRIX_ID"="IID"))
-head(pgsnohla)
-cor.test(pgsnohla$SCORESUM, pgsnohla$PGS) # PGS mostly preserved
-summary(glm(SVLEN_DG<224 ~ SCORESUM + PC3 + BATCH,  # and still predictive of vPTD
-            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))
-cor.test(pgsnohla$SCORESUM, pgsnohla$PC3) # not related to chr1-5,7-22-X PGS
-cor.test(pgsnohla$PGS-pgsnohla$SCORESUM, pgsnohla$PC3) # but related to chr6 PGS!
-
-# "score" based on chr6 alleles w/ weights from pc3:
-hlascore = read.table("/mnt/HARVEST/plinktests/score-pc3-chr6.profile", h=T)
-colnames(hlascore)[6] = "HLASCORE"
-pgsnohla = inner_join(pgsnohla, hlascore[,c("IID", "HLASCORE")], by=c("SENTRIX_ID"="IID"))
-head(pgsnohla)
-cor.test(pgsnohla$PC3, pgsnohla$HLASCORE) # v strong corr, chr6 explains a lot of PC3
-cor.test(pgsnohla$PGS, pgsnohla$PC3) # related to PGS?... r=0.03 though
-pgsnohla$HLASCORE = pgsnohla$HLASCORE/100
-
-summary(glm(SVLEN_DG<224 ~ PGS + HLASCORE + BATCH,
-            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))  # not predictive of vPTD though
-
-
-
-#------------- TODO fix below and retry
-
-# TODO !! cant do this b/c not equal scale
-pgsnohla$PC3noHLA = pgsnohla$PC3-pgsnohla$HLASCORE
-cor.test(pgsnohla$PC3, pgsnohla$PC3noHLA) # strong corr too
-summary(glm(SVLEN_DG<224 ~ PGS + PC3noHLA + BATCH,
-            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))  # some power is lost
-
-summary(glm(SVLEN_DG<224 ~ PGS + PC3noHLA + HLASCORE + BATCH,
-            data=pgsnohla[pgsnohla$hadevent,], family="binomial"))  # ????
-
-chr6pos = read.table("/mnt/HARVEST/plinktests/chr6-maf1-M.bim")
-head(chr6pos)
-chr6pos = inner_join(chr6pos, loads, by=c("V2"="ID", "V5"="A1"))
-ggplot(chr6pos, aes(x=V4/1000, y=abs(PC3))) + geom_point() +
-  geom_vline(xintercept = 30400, col="red") + geom_vline(xintercept = 36600, col="red")
-  # 6p21.31-33, from https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19
-  # high loadings clearly in HLA region!!!
-
-# but HLA alone is not very correlated to PC3, or vPTD. see w/ this:
-hlascore = read.table("/mnt/HARVEST/plinktests/score-pc3-hla.profile", h=T)
-
-cor.test(pgsnohla$HLASCORE, pgsnohla$PC3noHLA) # ????????
-
-# --------- experiments ------------
+# --------- mini PGS from the 24 SNPs? ------------
 # 
 # miniPGS = as.matrix(gt[,1:22]) %*% metares$BETA[1:22] # this one doesn't show the same effect
 # # or much effect overall
@@ -531,35 +471,6 @@ cor.test(pgsnohla$HLASCORE, pgsnohla$PC3noHLA) # ????????
 #   theme_bw()
 # 
 # 
-# # BW
-# mfr = read.table("/mnt/HARVEST/PDB1724_MFR_541_v12.csv", sep=";", h=T)
-# merged = inner_join(mfr_mid, mfr, by="PREG_ID_1724")
-# merged = inner_join(merged, pgs, by="SENTRIX_ID")
-# nrow(merged)
-# merged$PGScat = cut(merged$PGS, breaks=quantile(merged$PGS, c(0, 0.333, 0.666, 1)),
-#                     labels=c("1st (shortest)", "2nd", "3rd (longest)"), include.lowest = T)
-# ggplot(merged, aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=PGScat, fill=PGScat), alpha=0.1) + 
-#   theme_bw()
-# 
-# merged = mutate(merged, GAgr=cut(SVLEN_DG.x, c(169, 230, 260, 280, 292, 310)))
-# table(merged$GAgr, merged$PGScat)
-# merged %>%
-#   ggplot(aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=GAgr, fill=GAgr), alpha=0.1) + 
-#   facet_wrap(~PGScat) + 
-#   theme_bw()
-# merged %>%
-#   ggplot(aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=PGScat, fill=PGScat), alpha=0.1) + 
-#   facet_wrap(~GAgr) + 
-#   theme_bw()
-# 
-# group_by(merged, GAgr, PGScat) %>%
-#   filter(!is.na(ZSCORE_BW_GA)) %>%
-#   summarize(mean(ZSCORE_BW_GA), sd(ZSCORE_BW_GA), n())
-
-# burden score doesn't seem to be correlated to anything
-# rare = read.table("/mnt/HARVEST/plinktests/res_burden_rare-22.profile", h=T)[,c("FID", "CNT2")]
-# rare = inner_join(merged, rare, by=c("SENTRIX_ID"="FID"))
-
 
 # just to check that PGS actually predicts PTD as well
 summary(glm(SVLEN_DG<259 ~ PGS + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,

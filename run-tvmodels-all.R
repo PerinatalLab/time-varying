@@ -145,13 +145,12 @@ ped = as_ped(merged, Surv(GAc, hadevent)~ X1 + X2 + X3 + X4 + X5 + X6 +
 nrow(ped)  # 368280
 
 # get variance explained for the text
-print("linear models for R^2")
+print("linear models for R^2, genes only")
 summary(lm(GAc ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 +
              X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 +
              X19 + X20 + X21 + X22 + X23 + X24 + X25,
            data=merged[merged$hadevent,]))
-
-# r squared is 0.017. Checked w/ regressing out covariates and it doesn't change much.
+print("linear models for R^2, w/ covariates")
 summary(lm(GAc ~  X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 +
              X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 +
              X19 + X20 + X21 + X22 + X23 + X24 + X25 + BATCH +
@@ -356,7 +355,7 @@ out_plots %>%
   scale_color_manual(values=GTpalette, name="minor allele count") +
   scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   theme(legend.position=c(0.85, 0.1), legend.box.background= element_rect(colour="black"),
         strip.background = element_rect(fill="#E7E8D3"))
 
@@ -378,7 +377,7 @@ old_plot = out_plots %>%
   scale_color_manual(values=GTpalette, name="minor allele count") +
   scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   scale_y_continuous(expand = expansion(mult=0.3)) +
   theme(legend.position="bottom", strip.background = element_rect(fill="#E7E8D3"))
 
@@ -413,7 +412,7 @@ bind_rows("all"=out_pred_all, "clinical"=out_plots,
   scale_color_brewer(type="qual", palette="Set2") +
   scale_fill_brewer(type="qual", palette="Set2") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   theme(legend.position=c(0.1, 0.1), legend.box.background= element_rect(colour="black"),
         strip.background = element_rect(fill="#E7E8D3"))
 

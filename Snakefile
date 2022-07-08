@@ -44,8 +44,6 @@ rule analyze_all_main:
 		maintable="/home/julius/Documents/results/tv/table_main.tsv",
 		mainplot="/home/julius/Documents/results/tv/plot_allmain.png",
 		suppplot="/home/julius/Documents/results/tv/plot_suppcov.png",
-		mainplotpgs="/home/julius/Documents/results/tv/plot_pgs5.png",
-		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png",
 		supphaz="/home/julius/Documents/results/tv/plot_supphaz.png"
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
@@ -56,6 +54,18 @@ rule analyze_all_main:
 		mobares="snplists/topsnps_meta_summaries.txt"
 	script:
 		"run-tvmodels-all.R"
+
+rule analyze_pgs:
+	# TODO add all the plink file inputs somehow
+	output:
+		mainplotpgs="/home/julius/Documents/results/tv/plot_pgs5.png",
+		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png",
+		mainplotpca="/home/julius/Documents/results/tv/plot_explor.png"
+	input:
+		mfr="/mnt/HARVEST/ga_cleaned.csv",
+		pgs="/mnt/HARVEST/PGS.txt"
+	script:
+		"analyse-pgs.R"
 		
 rule analyze_diagnostics:
 	output:
@@ -123,3 +133,15 @@ rule simulate_null:
 # 		"/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
 # 	shell:
 # 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x ; ./extract-snps-moba30k.sh {inf} top1f"
+#
+# rule explore_pgs_plink:
+# 	"Prepare the stats needed for the PGS analysis R script."
+# 	input:
+# 		expand("/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/{chr}", chr=range(1,22),
+# 		"/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/X",
+# 		"ga_cleaned.csv",
+# 		"betas_all.txt"
+# 	output:
+# 		??
+# 	shell:
+# 		"bash pgs-bash.sh"
