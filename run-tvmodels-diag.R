@@ -18,7 +18,6 @@ library(broom)
 # gtfile="/mnt/HARVEST/top1-moba30k-dosage.csv.gz"
 # gtfileX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz"
 # gtfileF="/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
-# mobaresfile="snplists/topsnps_meta_summaries.txt"
 mfrfile = snakemake@input$mfr
 mfrfileF = snakemake@input$mfrF
 gtfile = snakemake@input$gt
@@ -279,8 +278,7 @@ ggplot(out, aes(x=cox.beta, y=pc.beta)) +
   xlab("log hazard ratio, Cox regression") + ylab("log hazard ratio, PAM") +
   coord_fixed() + theme_bw()
 
-ggsave(snakemake@output$coxdiagplot, width=6, height=5, units="in")
-ggsave("~/Documents/results/tv/plot_coxdiag.png", width=4, height=4, units="in")
+ggsave(snakemake@output$coxdiagplot, width=4, height=4, units="in")
 
 out[,c("rsid", "locus", "ref", "eff", "pc.sm.p", "pc.int.p", "cox.sch.p")] %>%
   arrange(pc.sm.p) %>%

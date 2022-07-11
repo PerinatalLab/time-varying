@@ -144,22 +144,6 @@ ped = as_ped(merged, Surv(GAc, hadevent)~ X1 + X2 + X3 + X4 + X5 + X6 +
              id = "id", cut=c(0,seq(20, 130, by=7)))
 nrow(ped)  # 368280
 
-# get variance explained for the text
-print("linear models for R^2, genes only")
-summary(lm(GAc ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 +
-             X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 +
-             X19 + X20 + X21 + X22 + X23 + X24 + X25,
-           data=merged[merged$hadevent,]))
-print("linear models for R^2, w/ covariates")
-summary(lm(GAc ~  X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 +
-             X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 +
-             X19 + X20 + X21 + X22 + X23 + X24 + X25 + BATCH +
-             poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-           data=merged[merged$hadevent,]))
-
-
-
-
 
 # -------------------------------------------
 # Analysis loop MATERNAL
@@ -360,6 +344,7 @@ out_plots %>%
         strip.background = element_rect(fill="#E7E8D3"))
 
 ggsave(snakemake@output$supphaz, width=8, height=7, units="in")
+ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=6, units="in")
 
 
 # MAIN PLOT (Fig 2)
@@ -371,7 +356,7 @@ old_plot = out_plots %>%
   filter(rsid %in% out$rsid[out$lin.p<0.05]) %>%
   ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=factor(GT), fill=factor(GT))) +
   geom_vline(xintercept = 37, col="grey80") +
-  facet_wrap(~locus, scales="free_y", ncol=3) +
+  facet_wrap(~locus, scales="free_y", ncol=4) +
   geom_line(lwd=0.6) +
   # geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed") +
   scale_color_manual(values=GTpalette, name="minor allele count") +
@@ -379,7 +364,8 @@ old_plot = out_plots %>%
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
   theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   scale_y_continuous(expand = expansion(mult=0.3)) +
-  theme(legend.position="bottom", strip.background = element_rect(fill="#E7E8D3"))
+  theme(legend.position=c(0.78, 0.06), legend.direction="horizontal",
+        strip.background = element_rect(fill="#E7E8D3"))
 
 # hax for setting tiny bit tighter y axes
 new_plot = old_plot +
@@ -389,8 +375,7 @@ new_plot_data = ggplot_build(new_plot)
 new_plot_data$layout$panel_params = old_plot_data$layout$panel_params
 
 plot(ggplot_gtable(new_plot_data))
-
-ggsave(snakemake@output$mainplot, plot=ggplot_gtable(new_plot_data), width=8, height=10, units="in")
+ggsave(snakemake@output$mainplot, plot=ggplot_gtable(new_plot_data), width=9.5, height=9, units="in")
 
 
 # SUPPLEMENTAL covariate effect plots
@@ -406,17 +391,17 @@ bind_rows("all"=out_pred_all, "clinical"=out_plots,
   ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=covariates, fill=covariates)) +
   geom_vline(xintercept = 37, col="grey80") +
   geom_hline(yintercept = 0, col="lightblue") +
-  facet_wrap(~locus, scales="free_y") +
+  facet_wrap(~locus, scales="free_y", ncol=5) +
   geom_line(lwd=0.6) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.02,lwd=0.2,lty="dashed") +
   scale_color_brewer(type="qual", palette="Set2") +
   scale_fill_brewer(type="qual", palette="Set2") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
   theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
-  theme(legend.position=c(0.1, 0.1), legend.box.background= element_rect(colour="black"),
+  theme(legend.position=c(0.9, 0.07), legend.box.background= element_rect(colour="black"),
         strip.background = element_rect(fill="#E7E8D3"))
 
-ggsave(snakemake@output$suppplot, width=8, height=10, units="in")
+ggsave(snakemake@output$suppplot, width=9, height=9, units="in")
 
 
 # print some outputs for the text

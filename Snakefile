@@ -1,21 +1,19 @@
 # In R, use snakemake@input[[1]] etc to get the variables
 # on harvest:
 # create snplist-alltop.txt, snplist-xtop.txt from meta results
-# /mnt/work2/jjuod/scripts/extract-snps-moba30k.sh snplist-alltop.txt top1
-# /mnt/work2/jjuod/scripts/extract-snps-moba30k.sh snplist-xtop.txt top1x
-# gzip both
 
 rule all:
 	"Create all target files."
 	input:
 		"/home/julius/Documents/results/tv/table_main.tsv",
 		"/home/julius/Documents/results/tv/plot_allmain.png",
-		"/home/julius/Documents/results/tv/plot_suppcov.png",
 		"/home/julius/Documents/results/tv/plot_pgs5.png",
-		"/home/julius/Documents/results/tv/plot_pgs3.png",
+		"/home/julius/Documents/results/tv/plot_explor.png",
+		"/home/julius/Documents/results/tv/plot_suppcov.png",
 		"/home/julius/Documents/results/tv/plot_supphaz.png",
 		"/home/julius/Documents/results/tv/table_diag.tsv",
-		"/home/julius/Documents/results/tv/plot_coxdiag.png"
+		"/home/julius/Documents/results/tv/plot_coxdiag.png",
+		"/home/julius/Documents/results/tv/plot_pgs3.png"
 
 rule preliminary:
 	"Create files for initial analyses. No real need to run this."
@@ -23,6 +21,8 @@ rule preliminary:
 		expand("/home/julius/Documents/results/tv/report_tvmodels{i}.pdf", i=range(1,23)),
 		expand("/home/julius/Documents/results/tv/report_tvmodelsX{i}.pdf", i=range(1,3)),
 		"/home/julius/Documents/results/tv/null-pvals.RData"
+
+# -----------------------
 
 rule prep_pheno:
 	"Clean MFR, create a censoring indicator, export selected columns."
@@ -55,15 +55,21 @@ rule analyze_all_main:
 	script:
 		"run-tvmodels-all.R"
 
+# TODO Chris's part outputting /mnt/HARVEST/PGS.txt
+
 rule analyze_pgs:
-	# TODO add all the plink file inputs somehow
 	output:
 		mainplotpgs="/home/julius/Documents/results/tv/plot_pgs5.png",
 		suppplotpgs="/home/julius/Documents/results/tv/plot_pgs3.png",
 		mainplotpca="/home/julius/Documents/results/tv/plot_explor.png"
 	input:
 		mfr="/mnt/HARVEST/ga_cleaned.csv",
-		pgs="/mnt/HARVEST/PGS.txt"
+		pgs="/mnt/HARVEST/PGS.txt",
+		pgstop="/mnt/HARVEST/plinktests/res_top_regions.sscore",
+		rarescore="/mnt/HARVEST/plinktests/res_burden_below0.001_rare.sscore",
+		recscore="/mnt/HARVEST/plinktests/res_burden_below0.001_rec.sscore",
+		pca="/mnt/HARVEST/plinktests/pca.eigenvec",
+		chr6pos="/mnt/HARVEST/plinktests/chr6-maf1-M.bim"
 	script:
 		"analyse-pgs.R"
 		
@@ -80,6 +86,40 @@ rule analyze_diagnostics:
 		maintable="/home/julius/Documents/results/tv/table_main.tsv"
 	script:
 		"run-tvmodels-diag.R"
+
+# THIS IS RUN ON HARVEST ONLY
+# rule extract_gt:
+# 	"Extract the selected SNPs from complete genotyping data."
+# 	input:
+# 		inauto="snplists/snplist-alltop.txt",
+# 		inx="snplists/snplist-xtop.txt",
+# 		inf="snplists/snplist-ftop.txt",
+# 		expand("/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/vcf/{chr}.vcf.gz", chr=range(1,22),
+# 		"/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/vcf/X.vcf.gz"
+# 	output:
+# 		"/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
+# 		"/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
+# 		"/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
+# 	shell:
+# 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x ; ./extract-snps-moba30k.sh {inf} top1f"
+#
+# rule explore_pgs_plink:
+# 	"Prepare the stats needed for the PGS analysis R script."
+# 	input:
+# 		expand("/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/{chr}.bed", chr=range(1,22),
+# 		"/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/X.bed",
+# 		"ga_cleaned.csv",
+# 		"betas_all.txt"
+# 	output:
+# 		"/mnt/HARVEST/plinktests/res_top_regions.sscore",
+# 		"/mnt/HARVEST/plinktests/res_burden_below0.001_rare.sscore",
+# 		"/mnt/HARVEST/plinktests/res_burden_below0.001_rec.sscore",
+# 		"/mnt/HARVEST/plinktests/pca.eigenvec",
+# 		"/mnt/HARVEST/plinktests/chr6-maf1-M.bim"
+# 	shell:
+# 		"bash pgs-bash.sh"
+
+# ----------------------------
 		
 rule prel_analyze_tv:
 	"Run the preliminary reports for top SNPs in TV models (autosomal SNPs only)."
@@ -118,30 +158,3 @@ rule simulate_null:
 	script:
 		"simulate-null.R"
 
-# THIS IS RUN ON HARVEST ONLY
-# rule extract_gt:
-# 	"Extract the selected SNPs from complete genotyping data."
-# 	input:
-# 		inauto="snplists/snplist-alltop.txt",
-# 		inx="snplists/snplist-xtop.txt",
-# 		inf="snplists/snplist-ftop.txt",
-# 		GENO_DATA_FILE_M,
-# 		GENO_DATA_FILE_F
-# 	output:
-# 		"/mnt/HARVEST/top1-moba30k-dosage.csv.gz",
-# 		"/mnt/HARVEST/top1x-moba30k-dosage.csv.gz",
-# 		"/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
-# 	shell:
-# 		"./extract-snps-moba30k.sh {inauto} top1 ; ./extract-snps-moba30k.sh {inx} top1x ; ./extract-snps-moba30k.sh {inf} top1f"
-#
-# rule explore_pgs_plink:
-# 	"Prepare the stats needed for the PGS analysis R script."
-# 	input:
-# 		expand("/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/{chr}", chr=range(1,22),
-# 		"/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/X",
-# 		"ga_cleaned.csv",
-# 		"betas_all.txt"
-# 	output:
-# 		??
-# 	shell:
-# 		"bash pgs-bash.sh"
