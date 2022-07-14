@@ -344,7 +344,7 @@ out_plots %>%
         strip.background = element_rect(fill="#E7E8D3"))
 
 ggsave(snakemake@output$supphaz, width=8, height=7, units="in")
-ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=6, units="in")
+# ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=6, units="in")
 
 
 # MAIN PLOT (Fig 2)
@@ -405,10 +405,8 @@ ggsave(snakemake@output$suppplot, width=9, height=9, units="in")
 
 
 # print some outputs for the text
-
-res = read.table("~/Documents/results/tv/table_main.tsv", h=T)
-filter(res, lin.p>=0.05)
-filter(res, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
+filter(out, lin.p>=0.05)
+filter(out, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
 
 
 # "zoom in" on IL1A: where is it sign. diff. from 0?
