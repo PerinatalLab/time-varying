@@ -118,7 +118,7 @@ gtF$SENTRIX_ID = rownames(gtF)
 rownames(gtF) = NULL
 gtF = filter(gtF, !is.na(X1)) # tends to add an empty line in the end
 dim(gtF)
-colnames(gtF) = c("X26", "X27", "X28", "SENTRIX_ID")
+colnames(gtF) = c("X26", "X27", "X28", "X29", "SENTRIX_ID")
 
 gt = full_join(gt, gtX, by=c("SENTRIX_ID"))
 gt = full_join(gt, gtF, by=c("SENTRIX_ID"))
@@ -148,7 +148,7 @@ nrow(ped)  # 368280
 # -------------------------------------------
 # Analysis loop MATERNAL
 
-out = data.frame(snpnum=1:28, rsid=NA, chr=NA, pos=NA, ref=NA, eff=NA, EAF=NA, locus=NA,
+out = data.frame(snpnum=1:29, rsid=NA, chr=NA, pos=NA, ref=NA, eff=NA, EAF=NA, locus=NA,
                  lin.beta=NA, lin.se=NA, lin.p=NA, pc.sm.edf=NA, pc.sm.p=NA)
 out_plots = vector("list", length(out$snpnum))
 out_pred_all = out_pred_pgs = out_pred_nocov = out_plots
@@ -236,14 +236,8 @@ for(snpnum in 1:25){
 merged = inner_join(gt, mfr_fid, by=c("SENTRIX_ID"))
 nrow(merged)  # all 25515 for autosomes
 
-# read and attach PGS
-# TODO !!! this is currently maternal PGS!
-# pgs = read.table("/mnt/HARVEST/PGS.txt", h=T)
-# merged = inner_join(merged, pgs, by=c("SENTRIX_ID"))
-nrow(merged)  # 25515
-
 # create ped form for PAMs
-ped = as_ped(merged, Surv(GAc, hadevent)~ X26 + X27 + X28 + # PGS +
+ped = as_ped(merged, Surv(GAc, hadevent)~ X26 + X27 + X28 + X29 +
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
              id = "id", cut=c(0,seq(20, 130, by=7)))
 nrow(ped)  # 369140
@@ -251,7 +245,7 @@ nrow(ped)  # 369140
 
 # -------------------------------------------
 # Analysis loop FETAL
-for(snpnum in 26:28){
+for(snpnum in 26:29){
   print(paste("Working on SNP", snpnum))
   # assign the right SNP to GT
   merged$GT = merged[,paste0("X",snpnum)]
@@ -328,7 +322,6 @@ for(snpnum in 26:28){
 }
 
 
-
 out
 write.table(out, snakemake@output$maintable, sep="\t", quote=F, row.names = F)
 
@@ -346,11 +339,12 @@ out_plots %>%
   scale_color_manual(values=GTpalette, name="minor allele count") +
   scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   theme(legend.position=c(0.85, 0.1), legend.box.background= element_rect(colour="black"),
         strip.background = element_rect(fill="#E7E8D3"))
 
 ggsave(snakemake@output$supphaz, width=8, height=7, units="in")
+# ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=6, units="in")
 
 
 # MAIN PLOT (Fig 2)
@@ -362,15 +356,16 @@ old_plot = out_plots %>%
   filter(rsid %in% out$rsid[out$lin.p<0.05]) %>%
   ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=factor(GT), fill=factor(GT))) +
   geom_vline(xintercept = 37, col="grey80") +
-  facet_wrap(~locus, scales="free_y", ncol=3) +
+  facet_wrap(~locus, scales="free_y", ncol=4) +
   geom_line(lwd=0.6) +
   # geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed") +
   scale_color_manual(values=GTpalette, name="minor allele count") +
   scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   scale_y_continuous(expand = expansion(mult=0.3)) +
-  theme(legend.position="bottom", strip.background = element_rect(fill="#E7E8D3"))
+  theme(legend.position=c(0.78, 0.06), legend.direction="horizontal",
+        strip.background = element_rect(fill="#E7E8D3"))
 
 # hax for setting tiny bit tighter y axes
 new_plot = old_plot +
@@ -380,13 +375,7 @@ new_plot_data = ggplot_build(new_plot)
 new_plot_data$layout$panel_params = old_plot_data$layout$panel_params
 
 plot(ggplot_gtable(new_plot_data))
-
-ggsave(snakemake@output$mainplot, plot=ggplot_gtable(new_plot_data), width=8, height=10, units="in")
-
-
-# later, for geno effects
-# merged$GTcat = factor(round(merged$GT))
-
+ggsave(snakemake@output$mainplot, plot=ggplot_gtable(new_plot_data), width=9.5, height=9, units="in")
 
 
 # SUPPLEMENTAL covariate effect plots
@@ -402,188 +391,31 @@ bind_rows("all"=out_pred_all, "clinical"=out_plots,
   ggplot(aes(x=(tmid+GA_START_TIME)/7, y=fit, col=covariates, fill=covariates)) +
   geom_vline(xintercept = 37, col="grey80") +
   geom_hline(yintercept = 0, col="lightblue") +
-  facet_wrap(~locus, scales="free_y") +
+  facet_wrap(~locus, scales="free_y", ncol=5) +
   geom_line(lwd=0.6) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.02,lwd=0.2,lty="dashed") +
   scale_color_brewer(type="qual", palette="Set2") +
   scale_fill_brewer(type="qual", palette="Set2") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
-  theme(legend.position=c(0.1, 0.1), legend.box.background= element_rect(colour="black"),
+  theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
+  theme(legend.position=c(0.9, 0.07), legend.box.background= element_rect(colour="black"),
         strip.background = element_rect(fill="#E7E8D3"))
 
-ggsave(snakemake@output$suppplot, width=8, height=10, units="in")
+ggsave(snakemake@output$suppplot, width=9, height=9, units="in")
 
 
-# -------------------------------------------
-# PGS
+# print some outputs for the text
+filter(out, lin.p>=0.05)
+filter(out, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
 
-# merge maternal PGS w/ pheno data
-pgs = read.table("/mnt/HARVEST/PGS.txt", h=T)
-merged = inner_join(mfr_mid, pgs, by=c("SENTRIX_ID"))
-nrow(merged)  # 26875
-
-# create ped form for PAMs
-ped = as_ped(merged, Surv(GAc, hadevent)~ PGS +
-               BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 368280
-
-# PGS-only analyses
-summary(lm(GAc ~ PGS, data=merged[merged$hadevent,]))
-
-# r squared is 0.017. Checked w/ regressing out covariates and it doesn't change much.
-summary(lm(GAc ~ PGS + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-           data=merged[merged$hadevent,]))
-
-# just to check that PGS actually predicts PTD as well
-summary(glm(SVLEN_DG<259 ~ PGS + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-            data=merged[merged$hadevent,], family="binomial"))
-
-# PGS as a multiplicative factor
-# mod.tv.pgs = bam(ped_status ~ ti(tend,bs='cr',k=11) + PGS + ti(tend, by=PGS,bs='cr') +
-#                    BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-#                  data=ped, offset=offset, family=poisson())
-# summary(mod.tv.pgs)
-# gg_slice(ped, mod.tv.pgs, "PGS", tend=unique(tend), PGS=c(-1,0,1)) + theme_bw()
-
-# PGS categorized for visualization
-ped$PGScat = cut(ped$PGS, breaks=quantile(merged$PGS, c(0, 0.2, 0.4, 0.6, 0.8, 1)),
-                 labels=c("1st (shortest)", "2nd", "3rd", "4th", "5th (longest)"))
-ped$PGScat = factor(ped$PGScat, levels=c("3rd", "1st (shortest)", "2nd", "4th", "5th (longest)"))
-
-mod.tv.pgs = bam(ped_status ~ ti(tend,bs='cr',k=11) + PGScat + ti(tend, by=as.ordered(PGScat),bs='cr') +
-                   BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-                 data=ped, offset=offset, family=poisson())
-summary(mod.tv.pgs)
-
-pred_df = make_newdata(ped, tend=unique(tend),
-                       PGScat=factor(c("1st (shortest)", "2nd", "3rd", "4th", "5th (longest)"),
-                                     levels=c("1st (shortest)", "2nd", "3rd", "4th", "5th (longest)"))) %>%
-  add_term(mod.tv.pgs, term="PGScat", se_mult=1.96) %>%
-  mutate(tmid = 0.5*tstart+0.5*tend)
-
-# make a palette with darker central color
-pal5 = RColorBrewer::brewer.pal(5, "RdYlBu")
-pal5[1] = "#FF410D"
-pal5[2] = "#F7C530"
-pal5[3] = "#ABB084"
-ggplot(pred_df, aes(x=(tmid+GA_START_TIME)/7, y=fit, col=PGScat, fill=PGScat)) +
-  geom_vline(xintercept = 37, col="grey80") +
-  geom_line(lwd=0.6) +
-  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.02,lwd=0.2,lty="dashed") +
-  scale_color_manual(values=pal5, name="GA PGS quintile") +
-  scale_fill_manual(values=pal5, name="GA PGS quintile") +
-  scale_x_continuous(breaks=seq(23, 43, by=2), expand=c(0,0)) +
-  ylim(c(-1.2, 2.2)) + 
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
-  theme(legend.position=c(0.85, 0.8), legend.box.background= element_rect(colour="black"),
-        panel.grid.minor.x=element_blank())
-
-ggsave(snakemake@output$mainplotpgs, width=5.5, height=4.5, units="in")
-
-
-# SUPPLEMENT: different cuts
-ped$PGScat = cut(ped$PGS, breaks=quantile(merged$PGS, c(0, 0.333, 0.666, 1)),
-                 labels=c("1st (shortest)", "2nd", "3rd (longest)"))
-ped$PGScat = factor(ped$PGScat, levels=c("2nd", "1st (shortest)", "3rd (longest)"))
-
-mod.tv.pgs = bam(ped_status ~ ti(tend,bs='cr',k=11) + PGScat + ti(tend, by=as.ordered(PGScat),bs='cr') +
-                   BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-                 data=ped, offset=offset, family=poisson())
-summary(mod.tv.pgs)
-
-pred_df = make_newdata(ped, tend=unique(tend),
-                       PGScat=factor(c("1st (shortest)", "2nd", "3rd (longest)"),
-                                     levels=c("1st (shortest)", "2nd", "3rd (longest)"))) %>%
-  add_term(mod.tv.pgs, term="PGScat", se_mult=1.96) %>%
-  mutate(tmid = 0.5*tstart+0.5*tend)
-
-ggplot(pred_df, aes(x=(tmid+GA_START_TIME)/7, y=fit, col=PGScat, fill=PGScat)) +
-  geom_vline(xintercept = 37, col="grey80") +
-  geom_line(lwd=0.6) +
-  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),alpha=0.05,lwd=0.2,lty="dashed") +
-  scale_color_manual(values=pal5[c(1,3,5)], name="GA PGS quintile") +
-  scale_fill_manual(values=pal5[c(1,3,5)], name="GA PGS quintile") +
-  scale_x_continuous(breaks=seq(23, 43, by=2), expand=c(0,0)) +
-  theme_bw() + xlab("gestational age, weeks") + ylab("hazard ratio") +
-  theme(legend.position=c(0.85, 0.8), legend.box.background= element_rect(colour="black"))
-
-ggsave(snakemake@output$suppplotpgs, width=6, height=5, units="in")
 
 # "zoom in" on IL1A: where is it sign. diff. from 0?
 filter(out_plots, grepl("IL1", locus), GT>0, sign(ci_lower)==sign(ci_upper)) %>%
   mutate(tmid=(tmid+GA_START_TIME)/7)
 
 
-# --------- experiments ------------
-# 
-# miniPGS = as.matrix(gt[,1:22]) %*% metares$BETA[1:22] # this one doesn't show the same effect
-# # or much effect overall
-# miniPGS = data.frame(miniPGS, gt$SENTRIX_ID)
-# merged = inner_join(merged, miniPGS, by=c("SENTRIX_ID"="gt.SENTRIX_ID"))
-# 
-# 
-# merged = inner_join(mfr_mid, gt, by=c("SENTRIX_ID"))
-# miniPGS = lm(GAc ~ X1 + X2 + X3 + X4 + X5 + X6 +
-#                X7 + X8 + X9 + X10 + X11 + X12 +
-#                X13 + X14 + X15 + X16 + X17 + X18 +         
-#                X19 + X20 + X21 + X22 + X23 +
-#                X24 + X25, data=merged)$fitted.values # for now, including all
-# merged$miniPGS = miniPGS
-# 
-# ped = as_ped(merged, Surv(GAc, hadevent)~ #PGS +
-#                miniPGS +
-#                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-#              id = "id", cut=c(0,seq(20, 130, by=7)))
-# # ped$PGScat = cut(ped$PGS, breaks=quantile(merged$PGS, c(0, 0.333, 0.666, 1)),
-# #                  labels=c("1st (shortest)", "2nd", "3rd (longest)"))
-# # ped$PGScat = factor(ped$PGScat, levels=c("2nd", "1st (shortest)", "3rd (longest)"))
-# ped$miniPGScat = cut(ped$miniPGS, breaks=quantile(merged$miniPGS, c(0, 0.333, 0.666, 1)),
-#                  labels=c("1st (shortest)", "2nd", "3rd (longest)"))
-# ped$miniPGScat = factor(ped$miniPGScat, levels=c("2nd", "1st (shortest)", "3rd (longest)"))
-# 
-# mod.tv.pgs = bam(ped_status ~ ti(tend,bs='cr',k=11) + miniPGScat + ti(tend, by=as.ordered(miniPGScat),bs='cr') +
-#                    BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
-#                  data=ped, offset=offset, family=poisson())
-# summary(mod.tv.pgs)
-# gg_slice(ped, mod.tv.pgs, "miniPGScat", tend=unique(tend),
-#          miniPGScat=factor(c("1st (shortest)", "2nd", "3rd (longest)"),
-#                        levels=c("1st (shortest)", "2nd", "3rd (longest)"))) +
-#   scale_color_brewer(type="div", palette="RdBu") +
-#   scale_fill_brewer(type="div", palette="RdBu") +
-#   theme_bw()
-# 
-# 
-# # BW
-# mfr = read.table("/mnt/HARVEST/PDB1724_MFR_541_v12.csv", sep=";", h=T)
-# merged = inner_join(mfr_mid, mfr, by="PREG_ID_1724")
-# merged = inner_join(merged, pgs, by="SENTRIX_ID")
-# nrow(merged)
-# merged$PGScat = cut(merged$PGS, breaks=quantile(merged$PGS, c(0, 0.333, 0.666, 1)),
-#                     labels=c("1st (shortest)", "2nd", "3rd (longest)"), include.lowest = T)
-# ggplot(merged, aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=PGScat, fill=PGScat), alpha=0.1) + 
-#   theme_bw()
-# 
-# merged = mutate(merged, GAgr=cut(SVLEN_DG.x, c(169, 230, 260, 280, 292, 310)))
-# table(merged$GAgr, merged$PGScat)
-# merged %>%
-#   ggplot(aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=GAgr, fill=GAgr), alpha=0.1) + 
-#   facet_wrap(~PGScat) + 
-#   theme_bw()
-# merged %>%
-#   ggplot(aes(x=ZSCORE_BW_GA)) + geom_density(aes(col=PGScat, fill=PGScat), alpha=0.1) + 
-#   facet_wrap(~GAgr) + 
-#   theme_bw()
-# 
-# group_by(merged, GAgr, PGScat) %>%
-#   filter(!is.na(ZSCORE_BW_GA)) %>%
-#   summarize(mean(ZSCORE_BW_GA), sd(ZSCORE_BW_GA), n())
+# TODO
+# later, for geno effects
+# merged$GTcat = factor(round(merged$GT))
 
-# burden score doesn't seem to be correlated to anything
-# rare = read.table("/mnt/HARVEST/plinktests/res_burden_rare-22.profile", h=T)[,c("FID", "CNT2")]
-# rare = inner_join(merged, rare, by=c("SENTRIX_ID"="FID"))
 
-res = read.table("~/Documents/results/tv/table_main.tsv", h=T)
-filter(res, lin.p>=0.05)
-filter(res, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
