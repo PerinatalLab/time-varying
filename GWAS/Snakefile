@@ -79,9 +79,9 @@ rule filter_summary:
 
     resources: mem_mb = 20000
 
-    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+    conda: "~/time-varying/GWAS/moba_gwas.yml"
 
-    script:"/home/karin.ytterberg/main_moba_gwas/scripts/filtering.R" 
+    script:"~/time-varying/GWAS/scripts/filtering.R" 
 
 
 rule reformat_summary_statistics:
@@ -135,32 +135,32 @@ rule QQ_plot:
 
     output:"/mnt/cargo/karin/main_moba_gwas/qq_plot_moba_{pheno_file}_{pheno_glm}.png"
 
-    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+    conda: "~/time-varying/GWAS/moba_gwas.yml"
 
-    script: "/home/karin.ytterberg/main_moba_gwas/scripts/QQ_plot.R"
+    script: "~/time-varying/GWAS/main_moba_gwas/scripts/QQ_plot.R"
 
 
 rule manhattan_plot:
     'manhattan plot'
     input: "/mnt/work2/karin/main_moba_gwas/results/GWAS/{pheno_file}_{pheno_glm}_filterd.txt",
-        "/home/karin.ytterberg/main_moba_gwas/top_snp/top_snp_{pheno_file}_{pheno_glm}.csv"
+        "~/time-varying/GWAS/top_snp/top_snp_{pheno_file}_{pheno_glm}.csv"
 
     output: "/mnt/cargo/karin/main_moba_gwas/manhattan_moba_{pheno_file}_{pheno_glm}.png"
 
-    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+    conda: "~/time-varying/GWAS/moba_gwas.yml"
 
-    script: "/home/karin.ytterberg/main_moba_gwas/scripts/manhattan_plot.R"
+    script: "~/time-varying/GWAS/scripts/manhattan_plot.R"
 
 rule beta_meta_vs_GD_plot:
     '  '
-    input: "/home/karin.ytterberg/main_moba_gwas/top_snp/topsnp_gd.csv",
+    input: "~/time-varying/GWAS/top_snp/topsnp_gd.csv",
         "/mnt/work2/karin/main_moba_gwas/results/GWAS/ga_cleaned_GD_filterd.txt"
 
     output: "/mnt/cargo/karin/main_moba_gwas/beta_meta_moba_gd.png"
 
-    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+    conda: "~/time-varying/GWAS/moba_gwas.yml"
 
-    script: "/home/karin.ytterberg/main_moba_gwas/scripts/beta_top_snp_gd_meta_vs_this_gwas.R"  
+    script: "~/time-varying/GWAS/scripts/beta_top_snp_gd_meta_vs_this_gwas.R"  
 
 
 rule beta_top_ptd_vs_gd_plot:
@@ -169,8 +169,8 @@ rule beta_top_ptd_vs_gd_plot:
         "/mnt/work2/karin/main_moba_gwas/results/GWAS/ga_cleaned_GD_filterd.txt"
     output: "/mnt/cargo/karin/main_moba_gwas/beta_gd_ptd.png"
 
-    conda: "/home/karin.ytterberg/main_moba_gwas/moba_gwas.yml"
+    conda: "~/time-varying/GWAS/moba_gwas.yml"
 
-    script: "/home/karin.ytterberg/main_moba_gwas/scripts/beta_top_ptd_vs_gd.R"
+    script: "~/time-varying/GWAS/scripts/beta_top_ptd_vs_gd.R"
 
     
