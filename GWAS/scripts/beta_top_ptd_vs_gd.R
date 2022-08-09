@@ -41,7 +41,9 @@ p = ggplot(b, aes(x=Beta, y=BETA)) +
        	ylab("Beta (Gestational duration)") + 
 	xlab("Beta (Preterm delivery)") + 
 	ggtitle("Beta of top loci of preterm delivery analysis against gestational duration") + 
-	geom_abline(intercept = 0, slope = -1, alpha = .5)
+	geom_abline(intercept = 0, slope = -1, alpha = .5) + 
+	geom_hline(yintercept = 0, alpha = .5) +
+        geom_vline(xintercept = 0, alpha = .5)
 
 ggsave(snakemake@output[[1]],p)
 
