@@ -1,10 +1,15 @@
 # Script for creating various summary statistics for PGS analysis.
 # NEED: plink, plink2 in path
 set -e
+GITDIR=$(dirname $(realpath "$0"))
+SNPLIST=${GITDIR}/snplists/snplist-alltop.txt  # provided in git
+
+WORKDIR=/mnt/work2/jjuod/tmp/plinktests/
+cd ${WORKDIR}
+
 GT=/mnt/archive/MOBAGENETICS/genotypes-base/imputed/all/plink/
 MFRFILE=../ga_cleaned.csv
-BETAS=betas_all.txt   # this is the PGS scoring file from Chris
-SNPLIST=snplists/snplist-alltop.txt  # provided in git
+BETAS=../betas_all.txt   # this is the PGS scoring file from Pol's meta
 
 # create maternal list from the GA phenotype file
 awk -F';' -v OFS='\t' 'NR>1{print $11, $11}' ${MFRFILE} > maternal_ids.fam

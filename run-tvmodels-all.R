@@ -19,12 +19,14 @@ library(broom)
 # gtfileX="/mnt/HARVEST/top1x-moba30k-dosage.csv.gz"
 # gtfileF="/mnt/HARVEST/top1f-moba30k-dosage.csv.gz"
 # mobaresfile="snplists/topsnps_meta_summaries.txt"
+# pgsfile="/mnt/HARVEST/PGS.txt"
 mfrfile = snakemake@input$mfr
 mfrfileF = snakemake@input$mfrF
 gtfile = snakemake@input$gt
 gtfileX = snakemake@input$gtX
 gtfileF = snakemake@input$gtF
 mobaresfile = snakemake@input$mobares
+pgsfile = snakemake@input$pgs
 
 # some constants:
 # palette for plotting. colors based on gg_sci::pal_tron
@@ -86,6 +88,41 @@ mfr_fid$GAc = mfr_fid$SVLEN_DG-GA_START_TIME
 range(mfr_fid$GAc)  # 13 139
 
 
+# ------------------------------------------
+# some numbers for text;
+
+# case numbers
+table(mfr_mid$SVLEN_DG[mfr_mid$hadevent]<259)
+table(mfr_fid$SVLEN_DG[mfr_fid$hadevent]<259)
+mean(mfr_mid$SVLEN_DG[mfr_mid$hadevent]<259)
+mean(mfr_fid$SVLEN_DG[mfr_fid$hadevent]<259)
+K = mean(mfr_mid$SVLEN_DG[mfr_mid$hadevent]<259)
+
+# ratio of n for equal power
+K*(1-K)/dnorm(qnorm(K))^2  # 6.7
+
+beta_lin = (qnorm(0.8) - qnorm(2.5e-8))/sqrt(sum(mfr_mid$hadevent))
+beta_lin
+# if unstand. beta relevant:
+# beta must exceed t*SE(beta)
+# yy = mfr_mid$SVLEN_DG[mfr_mid$hadevent]
+nn = sum(mfr_mid$hadevent)
+# maf = 0.5
+# (qnorm(0.8) - qnorm(2.5e-8))*sd(yy)/sqrt(nn*2*maf*(1-maf)) # 0.6 d
+beta_log = dnorm(qnorm(K))/(K*(1-K)) * beta_lin
+se_log = 1/sqrt(nn*K*(1-K))
+# power for the same alpha:
+1 - pnorm(-qnorm(2.5e-8) - beta_log/se_log)
+# not a lot haha
+# or alpha to reach same power:
+pnorm(-qnorm(0.2) - beta_log/se_log) # 0.0558
+# or e.g. to reach 50 % power
+pnorm(-qnorm(0.5) - beta_log/se_log) # 0.00749
+
+
+# TODO move the above to Karin's part
+
+
 # -------------------------------------------
 # read in genotypes
 gt = data.table::fread(gtfile, sep=" ", h=T)
@@ -130,8 +167,8 @@ merged = inner_join(gt, mfr_mid, by=c("SENTRIX_ID"))
 nrow(merged)  # all 26875 for autosomes
 
 # read and attach PGS
-pgs = read.table("/mnt/HARVEST/PGS.txt", h=T)
-merged = inner_join(merged, pgs, by=c("SENTRIX_ID"))
+pgs = read.table(pgsfile, h=T)
+merged = inner_join(merged, pgs, by=c("SENTRIX_ID"="PREG_ID_1724"))
 nrow(merged)  # 26875
 
 # create ped form for PAMs
@@ -141,8 +178,8 @@ ped = as_ped(merged, Surv(GAc, hadevent)~ X1 + X2 + X3 + X4 + X5 + X6 +
                X19 + X20 + X21 + X22 + X23 +
                X24 + X25 + PGS +
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 368280
+             id = "id", cut=c(0,seq(20, 137, by=7)))
+nrow(ped)  # 385943
 
 
 # -------------------------------------------
@@ -239,8 +276,8 @@ nrow(merged)  # all 25515 for autosomes
 # create ped form for PAMs
 ped = as_ped(merged, Surv(GAc, hadevent)~ X26 + X27 + X28 + X29 +
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 369140
+             id = "id", cut=c(0,seq(20, 137, by=7)))
+nrow(ped)  # 370725
 
 
 # -------------------------------------------
@@ -340,11 +377,10 @@ out_plots %>%
   scale_fill_manual(values=GTpalette, name="minor allele count") +
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
   theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
-  theme(legend.position=c(0.85, 0.1), legend.box.background= element_rect(colour="black"),
-        strip.background = element_rect(fill="#E7E8D3"))
+  theme(legend.position="bottom", strip.background = element_rect(fill="#E7E8D3"))
 
 ggsave(snakemake@output$supphaz, width=8, height=7, units="in")
-# ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=6, units="in")
+# ggsave("~/Documents/results/tv/plot_supphaz.png", width=8, height=7, units="in")
 
 
 # MAIN PLOT (Fig 2)
@@ -364,7 +400,7 @@ old_plot = out_plots %>%
   scale_x_continuous(breaks=seq(23, 43, by=2)) +
   theme_bw() + xlab("gestational age, weeks") + ylab("log hazard ratio") +
   scale_y_continuous(expand = expansion(mult=0.3)) +
-  theme(legend.position=c(0.78, 0.06), legend.direction="horizontal",
+  theme(legend.position="bottom", legend.direction="horizontal",
         strip.background = element_rect(fill="#E7E8D3"))
 
 # hax for setting tiny bit tighter y axes
@@ -376,6 +412,7 @@ new_plot_data$layout$panel_params = old_plot_data$layout$panel_params
 
 plot(ggplot_gtable(new_plot_data))
 ggsave(snakemake@output$mainplot, plot=ggplot_gtable(new_plot_data), width=9.5, height=9, units="in")
+# ggsave("~/Documents/results/tv/plot_allmain.png", plot=ggplot_gtable(new_plot_data), width=9.5, height=9, units="in")
 
 
 # SUPPLEMENTAL covariate effect plots
@@ -402,6 +439,7 @@ bind_rows("all"=out_pred_all, "clinical"=out_plots,
         strip.background = element_rect(fill="#E7E8D3"))
 
 ggsave(snakemake@output$suppplot, width=9, height=9, units="in")
+# ggsave("~/Documents/results/tv/plot_suppcov.png", width=9, height=9, units="in")
 
 
 # print some outputs for the text
@@ -412,10 +450,4 @@ filter(out, lin.p<0.05) %>% mutate(pc.sm.p<0.05)
 # "zoom in" on IL1A: where is it sign. diff. from 0?
 filter(out_plots, grepl("IL1", locus), GT>0, sign(ci_lower)==sign(ci_upper)) %>%
   mutate(tmid=(tmid+GA_START_TIME)/7)
-
-
-# TODO
-# later, for geno effects
-# merged$GTcat = factor(round(merged$GT))
-
 

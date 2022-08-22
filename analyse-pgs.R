@@ -70,7 +70,7 @@ range(mfr_mid$GAc)  # 1 139
 
 # merge maternal PGS w/ pheno data
 pgs = read.table(pgsfile, h=T)
-merged = inner_join(mfr_mid, pgs, by=c("SENTRIX_ID"))
+merged = inner_join(mfr_mid, pgs, by=c("SENTRIX_ID"="PREG_ID_1724"))
 nrow(merged)  # 26875
 
 # PGS categorized for visualization
@@ -80,7 +80,7 @@ merged$PGScat_rel = cut(merged$PGS, breaks=quantile(merged$PGS, c(0, 0.2, 0.4, 0
 merged$PGScat = factor(merged$PGScat_rel, levels=PGSlabels[c(3, 1,2,4,5)])  # set middle ref level
 
 
-# variance explained: (about 0.018)
+# variance explained: (about 0.0197)
 summary(lm(GAc ~ PGS, data=merged[merged$hadevent,]))
 
 # (slightly smaller r squared if all births included)
@@ -96,7 +96,7 @@ pgs_top = read.table(pgstopfile, h=T, comment.char = "")
 merged2 = inner_join(merged, pgs_top[,c("IID", "SCORE1_AVG")], by=c("SENTRIX_ID"="IID"))
 merged2$SCORE1_AVG = merged2$SCORE1_AVG * 2000 # just for my sanity
 cor.test(merged2$PGS, merged2$SCORE1_AVG)
-# variance explained: (about 0.006)
+# variance explained: (about 0.006 & 0.014)
 summary(lm(GAc ~ SCORE1_AVG, data=merged2[merged2$hadevent,]))
 summary(lm(GAc ~ SCORE1_AVG + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD + PARITET_5,
            data=merged2[merged2$hadevent,]))
@@ -106,8 +106,8 @@ summary(lm(GAc ~ SCORE1_AVG + BATCH + poly(MAGE,2) + FAAR + AA87 + KJONN + MISD 
 # create ped form for PAMs
 ped = as_ped(merged, Surv(GAc, hadevent) ~ PGS + PGScat +
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 368280
+             id = "id", cut=c(0,seq(20, 137, by=7)))
+nrow(ped)  # 389543
 
 # run PAMM
 mod.tv.pgs = bam(ped_status ~ ti(tend,bs='cr',k=11) + PGScat + ti(tend, by=as.ordered(PGScat),bs='cr') +
@@ -312,6 +312,8 @@ summary(glm(SVLEN_DG<259 ~ PGS + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
 summary(glm(SVLEN_DG<224 ~ PGS + PC1 + PC2 + PC3 + PC4 + PC5 + BATCH,
             data=pcs[pcs$hadevent,], family="binomial"))
 summary(glm(SVLEN_DG<224 ~ PGS + PC3 + BATCH,
+            data=pcs[pcs$hadevent,], family="binomial"))
+summary(glm(SVLEN_DG<259 ~ PGS + PC3 + BATCH,
             data=pcs[pcs$hadevent,], family="binomial"))
 
 # PC3 is still sign. even w/ non-linear PGS and clinical covars (except parity to allow fitting)

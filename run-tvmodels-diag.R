@@ -115,7 +115,7 @@ gtF$SENTRIX_ID = rownames(gtF)
 rownames(gtF) = NULL
 gtF = filter(gtF, !is.na(X1)) # tends to add an empty line in the end
 dim(gtF)
-colnames(gtF) = c("X26", "X27", "X28", "SENTRIX_ID")
+colnames(gtF) = c("X26", "X27", "X28", "X29", "SENTRIX_ID")
 
 gt = full_join(gt, gtX, by=c("SENTRIX_ID"))
 gt = full_join(gt, gtF, by=c("SENTRIX_ID"))
@@ -133,14 +133,14 @@ ped = as_ped(merged, Surv(GAc, hadevent)~ X1 + X2 + X3 + X4 + X5 + X6 +
                X19 + X20 + X21 + X22 + X23 +
                X24 + X25 + 
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 368280
+             id = "id", cut=c(0,seq(20, 137, by=7)))
+nrow(ped)  # ~380k
 
 
 # -------------------------------------------
 # Analysis loop MATERNAL
 
-out = data.frame(snpnum=1:28, rsid=NA, ref=NA, eff=NA,
+out = data.frame(snpnum=1:29, rsid=NA, ref=NA, eff=NA,
                  pc.int.beta=NA, pc.int.p=NA, cox.sch.p=NA,
                  cox.beta=NA, cox.se=NA, pc.beta=NA, pc.se=NA)
 
@@ -201,15 +201,15 @@ merged = inner_join(gt, mfr_fid, by=c("SENTRIX_ID"))
 nrow(merged)  # all 25515 for autosomes
 
 # create ped form for PAMs
-ped = as_ped(merged, Surv(GAc, hadevent)~ X26 + X27 + X28 + 
+ped = as_ped(merged, Surv(GAc, hadevent)~ X26 + X27 + X28 + X29 +
                BATCH + MAGE + FAAR + AA87 + KJONN + MISD + PARITET_5,
-             id = "id", cut=c(0,seq(20, 130, by=7)))
-nrow(ped)  # 369140
+             id = "id", cut=c(0,seq(20, 137, by=7)))
+nrow(ped)  # ~380k
 
 
 # -------------------------------------------
 # Analysis loop FETAL
-for(snpnum in 26:28){
+for(snpnum in 26:29){
   print(paste("Working on SNP", snpnum))
   # assign the right SNP to GT
   merged$GT = merged[,paste0("X",snpnum)]
@@ -286,6 +286,3 @@ out[,c("rsid", "locus", "ref", "eff", "pc.sm.p", "pc.int.p", "cox.sch.p")] %>%
   kable(format="simple")
 
   
-# later, for geno effects
-# merged$GTcat = factor(round(merged$GT))
-
