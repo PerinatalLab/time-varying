@@ -3,6 +3,8 @@ library(data.table)
 library(ggplot2)
 library(ggrepel)
 library(cowplot)
+library(png)
+library(magick)
 
 HC= -log10(5e-8)
 
@@ -112,7 +114,7 @@ p1 = manhattan_plot(don)
 p1.final = p1 +
   geom_point(data=topsnpGA, color="#f60000", size=0.2) +
   geom_label_repel(data=mutate(topsnpGA.bot, P=pmin(1, P*1.2)), aes(label=nearestGene),
-                   ylim=c(-Inf,-1.6), fontface="italic", force=2,
+                   ylim=c(-Inf,-1.8), fontface="italic", force=2,
                    segment.size=0.3, arrow=arrow(angle=20, length=unit(0.02, "npc")), 
                    color="black", segment.color="#f60000") +
   geom_label_repel(data=mutate(topsnpGA.left, P=pmin(1, P*0.8)), aes(label=nearestGene),
@@ -126,7 +128,6 @@ p1.final = p1 +
                    color="black", segment.color="#f60000") +
   theme(plot.margin = unit(c(t=0, r=0, b=1.8, l=0), 'cm'))
 
-p1.final
 
 # --- PTD
 topsnpPTD = fread("GWAS/top_snp/top_snp_ga_cleaned_PTD.csv")
@@ -147,10 +148,10 @@ topsnpPTD.top = anti_join(topsnpPTD, topsnpPTD.bot)
 p2.final = p2 +
   geom_hline(data=alphas, aes(yintercept=-log10(y)), linetype="dotted", col="cornsilk1", size=0.5) +
   geom_text(data=alphas, aes(y=-log10(y), x=0, label=power),
-            vjust="bottom", hjust="left", col="cornsilk1", size=3) +
+            vjust="bottom", hjust="left", col="cornsilk1", size=4) +
   geom_point(data=topsnpPTD, color="#f60000", size=0.2) +
   geom_label_repel(data=mutate(topsnpPTD.bot, P=pmin(1, P*1.2)), aes(label=nearestGene),
-                   ylim=c(-Inf,-1.1), fontface="italic", force=2,
+                   ylim=c(-Inf,-1.3), fontface="italic", force=2,
                    segment.size=0.3, arrow=arrow(angle=20, length=unit(0.02, "npc")), 
                    color="black", segment.color="#f60000") +
   geom_label_repel(data=mutate(topsnpPTD.top, P=pmin(1, P*0.8)), aes(label=nearestGene),
@@ -160,17 +161,30 @@ p2.final = p2 +
                    color="black", segment.color="#f60000") +
   theme(plot.margin = unit(c(t=0, r=0, b=0.8, l=0), 'cm'))
 
-p2.final
 
 pall = plot_grid(p1.final, p2.final, nrow=2, labels="AUTO", rel_heights=c(0.54,0.46))
 
-ggsave("~/Documents/results/tv/plot_manh_main.png", pall, width=20, height=18, units="cm")
-# ggsave(snakemake@output[[2]], pall, width = 20, height = 18, units="cm")
+# ---- locusZoom and beta PTD vs GD plots
 
-library(png)
-library(magick)
 plz = readPNG("~/Documents/results/tv/locuszoom_sm.png")
 
-pbetas = 
+betas = read.table(snakemake@input[[5]], comment.char = "", h=T)
+# betas = read.table("/mnt/HARVEST/main_moba_gwas/beta_gd_ptd.csv", comment.char = "", h=T)
 
-plot_grid(ggdraw() + draw_image(plz), pbetas, labels=c("C", "D"))
+pbetas = ggplot(betas, aes(x=BETA_PTD, y=BETA)) +
+	geom_point(aes(color=outcome),size=1) +
+  ylab("Beta (gestational duration)") + xlab("log OR (preterm delivery)") +
+  geom_vline(xintercept = 0, col="grey60") + geom_hline(yintercept = 0, col="grey60") +
+  geom_abline(slope = -1, col="grey80") +
+  scale_color_manual(name="hits for:", values=c("#55AEC4", "#FF410D")) +
+  scale_y_continuous(position="right") +
+  coord_fixed() + theme_bw() +
+  theme(legend.position=c(0.25,0.15), panel.grid.minor=element_blank(), legend.background=element_blank(),
+        legend.key=element_rect(fill=NA))
+
+pcd = plot_grid(ggdraw() + draw_image(plz), pbetas, labels=c("C", "D"), rel_widths=c(7, 3))
+
+pveryfinal = plot_grid(pall, pcd, nrow=2, rel_heights=c(6,3))
+
+# ggsave("~/Documents/results/tv/plot_manh_main.png", pveryfinal, width=20, height=24, units="cm", bg="white")
+ggsave(snakemake@output[[2]], pveryfinal, width = 20, height = 24, units="cm")
