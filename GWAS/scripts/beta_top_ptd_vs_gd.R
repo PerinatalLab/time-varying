@@ -90,19 +90,19 @@ c = inner_join(sig_snp, sig_snp2, by = "POS" ) #227 snps
 
 ## Plot
 # Join top variants from ptd and gd
-a = rbind(b, c)
+a = bind_rows("PTD"=b, "GD"=c, .id="outcome")
+write.table(a, snakemake@output[[1]], quote=F, row.names=F)
 
 #plot
-p = ggplot(a, aes(x=Beta, y=BETA)) + 
-	geom_point(pch=19,color="blue",size=3) +
-       	ylab("Beta (Gestational duration)") + 
-	xlab("log OR(Preterm delivery)") + 
-	ggtitle("Effect direction of top loci for preterm delivery and gestational duration") + 
-	geom_abline(intercept = 0, slope = -1, alpha = .5) + 
-	geom_hline(yintercept = 0, alpha = .5) +
-        geom_vline(xintercept = 0, alpha = .5)
-
-ggsave(snakemake@output[[1]],p)
-
-
-
+# p = ggplot(a, aes(x=Beta, y=BETA)) + 
+# 	geom_point(pch=19,color="blue",size=3) +
+#        	ylab("Beta (Gestational duration)") + 
+# 	xlab("log OR(Preterm delivery)") + 
+# 	ggtitle("Effect direction of top loci for preterm delivery and gestational duration") + 
+# 	geom_abline(intercept = 0, slope = -1, alpha = .5) + 
+# 	geom_hline(yintercept = 0, alpha = .5) +
+#         geom_vline(xintercept = 0, alpha = .5)
+# 
+# ggsave(snakemake@output[[1]],p)
+# 
+# 
