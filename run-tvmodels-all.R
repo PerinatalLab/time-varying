@@ -98,6 +98,8 @@ mean(mfr_mid$SVLEN_DG[mfr_mid$hadevent]<259)
 mean(mfr_fid$SVLEN_DG[mfr_fid$hadevent]<259)
 K = mean(mfr_mid$SVLEN_DG[mfr_mid$hadevent]<259)
 
+print("Power calculations")
+
 # ratio of n for equal power
 K*(1-K)/dnorm(qnorm(K))^2  # 6.7
 
@@ -118,9 +120,6 @@ se_log = 1/sqrt(nn*K*(1-K))
 pnorm(-qnorm(0.2) - beta_log/se_log) # 0.0558
 # or e.g. to reach 50 % power
 pnorm(-qnorm(0.5) - beta_log/se_log) # 0.00749
-
-
-# TODO move the above to Karin's part
 
 
 # -------------------------------------------

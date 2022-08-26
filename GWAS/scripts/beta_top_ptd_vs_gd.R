@@ -5,92 +5,77 @@ library(ggplot2)
 dat = fread(snakemake@input[[1]])
 dat2 = fread(snakemake@input[[2]])
 
+dat$CHR = as.numeric(ifelse(dat$"#CHROM"=="X",23,dat$"#CHROM"))
+dat2$CHR = as.numeric(ifelse(dat2$"#CHROM"=="X",23,dat2$"#CHROM"))
+
 ## PTD
 # Sig level
-dat = dat %>% filter(P<1*10**-5) %>% arrange(P) %>% group_by('#CHROM')
+dat_top = dat %>% filter(P<1*10**-5) %>% arrange(P)
 
-final_pos_list = c()
-chrom_list = unique(ifelse(dat$"#CHROM"=="X",23,dat$"#CHROM") )
+final_pos_list = data.frame()
+chrom_list = unique(dat_top$CHR)
 
 # Extract sig snp, independent regions for top loci with a radius of 1.5 Mb, based on chromosome
 for (chrom in chrom_list) {
-        
-        chromosome = dat[dat$"#CHROM" == ifelse(chrom == 23, "X",chrom),]
-        positions = chromosome$POS
-        min_P = chromosome %>% arrange(P) %>% filter(row_number()==1) %>% pull(POS)
-        final_pos_list = rbind(final_pos_list, c(min_P,chrom) )
-        for (pos in positions) {
-		if ( ( (!pos %in% final_pos_list[,1] | (pos %in% final_pos_list[,1] & !chrom %in% as.numeric(final_pos_list[,2])) )  & (pos < as.numeric(final_pos_list[,1]) - (1.5*10**6) | pos > as.numeric(final_pos_list[,1]) + (1.5*10**6)) ) ) {
-			final_pos_list = rbind(final_pos_list, c(pos,chrom))
-                }
-        }
+  chromosome = filter(dat_top, CHR==chrom)
+  positions = chromosome$POS
+  min_P = positions[which.min(dat_top$P)]
+  final_pos_list = bind_rows(final_pos_list, data.frame("POS"=min_P,"CHR"=chrom))
+  for (pos in positions) {
+    if ( !(pos %in% final_pos_list[,1] & chrom %in% final_pos_list[,2])){
+      same_chrom = final_pos_list$POS[final_pos_list$CHR==chrom]
+      if(min(abs(pos - same_chrom)) > 1.5e6){
+        final_pos_list = bind_rows(final_pos_list, data.frame("POS"=pos,"CHR"=chrom))  
+      }
+    }
+  }
 }
 
 #SNP to plot
-colnames(final_pos_list) = c("POS","#CHROM")
-final_pos_list = as.data.frame(final_pos_list)
-final_pos_list$"#CHROM" = ifelse(final_pos_list$"#CHROM"==23,"X",final_pos_list$"#CHROM")
+sig_snp = inner_join(dat, final_pos_list, by = c('POS','CHR'))
+sig_snp2 = inner_join(dat2, final_pos_list, by = c('POS','CHR'))
 
-final_pos_list$POS = as.numeric(final_pos_list$POS)
-dat$POS = as.numeric(dat$POS)
-dat2$POS = as.numeric(dat2$POS)
+sig_snp$BETA_PTD = log(sig_snp$OR) # convert OR for sig_snp
 
-sig_snp = inner_join(dat, final_pos_list, by = c('POS','#CHROM'))
-sig_snp2 = inner_join(dat2, final_pos_list, by = c('POS','#CHROM'))
-
-sig_snp$Beta = log(sig_snp$OR) # convert OR for sig_snp
-
-b = inner_join(sig_snp, sig_snp2, by = "POS" ) # 165 snps
+dfb = inner_join(sig_snp, sig_snp2, by = c("POS", "CHR")) # 36 snps
 
 
 ## GD
-dat = fread(snakemake@input[[1]])
-dat2 = fread(snakemake@input[[2]])
 
 # Sig level
-dat2 = dat2 %>% filter(P<1*10**-5) %>% arrange(P) %>% group_by('#CHROM')
+dat2_top = dat2 %>% filter(P<1*10**-5) %>% arrange(P)
 
-final_pos_list = c()
-chrom_list = unique(ifelse(dat2$"#CHROM"=="X",23,dat2$"#CHROM") )
+final_pos_list = data.frame()
+chrom_list = unique(dat2_top$CHR)
 
 # Extract sig snp, independent regions for top loci with a radius of 1.5 Mb, based on chromosome
 for (chrom in chrom_list) {
-        chromosome = dat2[dat2$"#CHROM" == ifelse(chrom == 23, "X",chrom),]
-        positions = chromosome$POS
-        min_POS = chromosome %>% arrange(P) %>% filter(row_number()==1) %>% pull(POS)
-        final_pos_list = rbind(final_pos_list, c(min_POS,chrom) )
-
-        for (pos in positions) {
-                if ( ( (!pos %in% final_pos_list[,1] | (pos %in% final_pos_list[,1] & !chrom %in% as.numeric(final_pos_list[,2])) )  & (pos < as.numeric(final_pos_list[,1]) - (1.5*10**6) | pos > as.numeric(final_pos_list[,1]) + (1.5*10**6)) ) ) {
-                       final_pos_list = rbind(final_pos_list, c(pos,chrom))
-
-                }
-        }
+  chromosome = filter(dat2_top, CHR==chrom)
+  positions = chromosome$POS
+  min_P = positions[which.min(dat2_top$P)]
+  final_pos_list = bind_rows(final_pos_list, data.frame("POS"=min_P,"CHR"=chrom))
+  for (pos in positions) {
+    if ( !(pos %in% final_pos_list[,1] & chrom %in% final_pos_list[,2])){
+      same_chrom = final_pos_list$POS[final_pos_list$CHR==chrom]
+      if(min(abs(pos - same_chrom)) > 1.5e6){
+        final_pos_list = bind_rows(final_pos_list, data.frame("POS"=pos,"CHR"=chrom))  
+      }
+    }
+  }
 }
 
 #SNP to plot
-colnames(final_pos_list) = c("POS","#CHROM")
-final_pos_list = as.data.frame(final_pos_list)
-final_pos_list$"#CHROM" = ifelse(final_pos_list$"#CHROM"==23,"X",final_pos_list$"#CHROM")
+sig_snp = inner_join(dat, final_pos_list, by = c('POS','CHR'))
+sig_snp2 = inner_join(dat2, final_pos_list, by = c('POS','CHR'))
 
-final_pos_list$POS = as.numeric(final_pos_list$POS)
-dat$POS = as.numeric(dat$POS)
-dat2$POS = as.numeric(dat2$POS)
+sig_snp$BETA_PTD = log(sig_snp$OR) # convert OR for sig_snp
 
-
-sig_snp = inner_join(dat, final_pos_list, by = c('POS','#CHROM'))
-sig_snp2 = inner_join(dat2, final_pos_list, by = c('POS','#CHROM'))
-
-
-# convert OR for sig_snp
-sig_snp$Beta = log(sig_snp$OR)
-
-c = inner_join(sig_snp, sig_snp2, by = "POS" ) #227 snps
+dfc = inner_join(sig_snp, sig_snp2, by = c("POS", "CHR")) #227 snps
 
 
 ## Plot
 # Join top variants from ptd and gd
-a = bind_rows("PTD"=b, "GD"=c, .id="outcome")
+a = bind_rows("PTD"=dfb, "GD"=dfc, .id="outcome")
 write.table(a, snakemake@output[[1]], quote=F, row.names=F)
 
 #plot
