@@ -262,7 +262,7 @@ for(snpnum in 26:29){
 
 
 # attach locus and pval from the maintext PAM model
-out = left_join(out, out_prev[,c("rsid", "locus", "ref", "eff", "pc.sm.p")],
+out = left_join(out, out_prev[,c("rsid", "locus", "chr", "pos", "ref", "eff", "EAF", "lin.beta", "pc.sm.p")],
                 by=c("rsid", "ref", "eff"))
 
 out
@@ -280,9 +280,9 @@ ggplot(out, aes(x=cox.beta, y=pc.beta)) +
 
 ggsave(snakemake@output$coxdiagplot, width=4, height=4, units="in")
 
-out[,c("rsid", "locus", "ref", "eff", "pc.sm.p", "pc.int.p", "cox.sch.p")] %>%
+out[,c("locus", "rsid", "chr", "pos", "ref", "eff", "EAF", "lin.beta", "pc.sm.p", "pc.int.p", "cox.sch.p")] %>%
   arrange(pc.sm.p) %>%
-  mutate_at(c("pc.sm.p", "pc.int.p", "cox.sch.p"), prettyNum, digits=3) %>%
+  mutate_at(c("EAF", "lin.beta", "pc.sm.p", "pc.int.p", "cox.sch.p"), prettyNum, digits=2) %>%
   kable(format="simple")
 
   
