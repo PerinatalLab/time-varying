@@ -121,6 +121,21 @@ pnorm(-qnorm(0.2) - beta_log/se_log) # 0.0558
 # or e.g. to reach 50 % power
 pnorm(-qnorm(0.5) - beta_log/se_log) # 0.00749
 
+# direct power calculations
+# install.packages("devtools")
+devtools::install_github("camillemmoore/Power_Genetics", subdir="genpwr")
+library(genpwr)
+
+genpwr.calc(calc="es", model="linear", N=22247, Power=0.8,
+            MAF=0.2, Alpha=5e-8, sd_y=9.89,
+            True.Model = "Additive", Test.Model = "Additive")
+# 0.737 d/copy
+
+genpwr.calc(calc="es", model="logistic", N=22247, Power=0.8,
+            MAF=0.2, Alpha=5e-8, Case.Rate=0.027,
+            True.Model = "Additive", Test.Model = "Additive")
+# OR 1.53/copy
+
 
 # -------------------------------------------
 # read in genotypes
